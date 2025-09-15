@@ -3,19 +3,24 @@ const mysql = require('mysql2/promise');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-require('dotenv').config(); // Carrega as variáveis do arquivo .env
+require('dotenv').config();
 
 const app = express();
-const port = 3001;
+// AJUSTE 1: Usar a porta do ambiente ou a 3001 como padrão
+const port = process.env.PORT || 3001;
 
 // --- Middlewares Essenciais ---
 app.use(cors());
 app.use(express.json());
 
-// --- Chave Secreta para o JWT (lida do .env) ---
+// AJUSTE 2: Pegar a chave secreta das variáveis de ambiente
 const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error("ERRO FATAL: A variável de ambiente JWT_SECRET não está definida.");
+  process.exit(1); // Encerra a aplicação se a chave não for encontrada
+}
 
-// --- Configuração do Banco de Dados (lida do .env) ---
+// AJUSTE 3: Pegar as configurações do banco das variáveis de ambiente
 const dbConfig = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -113,7 +118,7 @@ app.post('/api/posts/:id/like', async (req, res) => {
 });
 
 
-// --- ROTA DE PERFIL DE USUÁRIO ---
+// --- ROTA DE PERFIL DE USUÁRIO (ATUALIZADA) ---
 app.get('/api/users/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -133,5 +138,6 @@ app.get('/api/users/:id', async (req, res) => {
 
 // --- Iniciar o Servidor ---
 app.listen(port, () => {
-  console.log(`Servidor backend rodando em http://localhost:${port}`);
+  // AJUSTE 4: Mensagem de log um pouco mais genérica
+  console.log(`Servidor backend rodando na porta ${port}`);
 });
