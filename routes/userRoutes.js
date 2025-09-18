@@ -4,81 +4,77 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const bcrypt = require('bcryptjs');
-const { pool } = require('../db'); // Seu arquivo de conexão com o banco
+// 1. IMPORTANDO O PRISMA CLIENT
+const { PrismaClient } = require('@prisma/client');
 const authMiddleware = require('../middleware/authMiddleware');
 
+const prisma = new PrismaClient(); // Instanciando o Prisma
 const router = express.Router();
 
 // ==========================================================
-//           ROTA DE REGISTRO DE NOVO USUÁRIO (ATUALIZADA)
+//      ROTA DE REGISTRO DE NOVO USUÁRIO (USANDO PRISMA)
 // ==========================================================
 // URL: /api/users/register
 router.post('/register', async (req, res) => {
   try {
-    // 1. Extrai TODOS os dados do corpo da requisição (novos e antigos)
+    // 2. Extrai os dados do corpo da requisição
+    // Note que `profileType` foi removido e `username` foi renomeado para `name`
     const {
       email,
       password,
-      username,
-      profileType,
+      username: name, // <-- A MÁGICA ACONTECE AQUI
       interests,
       desires,
       fetishes,
       location,
-      favoritedSuggestions // Note o camelCase vindo do frontend
+      favoritedSuggestions,
     } = req.body;
 
-    // 2. Validação dos campos essenciais
-    if (!email || !password || !username || !profileType) {
-      return res.status(400).json({ message: 'Campos essenciais são obrigatórios.' });
+    // 3. Validação dos campos essenciais
+    if (!email || !password || !name) {
+      return res.status(400).json({ message: 'E-mail, senha e nome de usuário são obrigatórios.' });
     }
 
-    // 3. Verifica se o usuário já existe
-    const checkUserSql = "SELECT id FROM users WHERE email = ? OR name = ?";
-    const [existingUsers] = await pool.query(checkUserSql, [email, username]);
+    // 4. Verifica se o usuário já existe usando Prisma
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ email: email }, { name: name }],
+      },
+    });
 
-    if (existingUsers.length > 0) {
+    if (existingUser) {
       return res.status(409).json({ message: 'E-mail ou nome de usuário já cadastrado.' });
     }
 
-    // 4. Criptografa a senha
+    // 5. Criptografa a senha
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 5. ATUALIZAÇÃO: Query SQL agora inclui as novas colunas
-    const insertUserSql = `
-      INSERT INTO users (
-        name, email, password, profile_type, 
-        interests, desires, fetishes, location, favorited_suggestions
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    // 6. Insere o usuário no banco de dados usando Prisma
+    // O Prisma já sabe os nomes das colunas pelo schema.prisma
+    const newUser = await prisma.user.create({
+      data: {
+        name: name,
+        email: email,
+        password: hashedPassword,
+        // Campos opcionais
+        interests: interests || [],
+        desires: desires || [],
+        fetishes: fetishes || [],
+        location: location || null,
+        favorited_suggestions: favoritedSuggestions || [], // Prisma lida com o mapeamento
+      },
+    });
 
-    // 6. ATUALIZAÇÃO: Lista de valores para a query, incluindo os novos dados
-    // Usamos JSON.stringify para converter os arrays do JS em texto no formato JSON,
-    // que é como o banco de dados espera receber.
-    const values = [
-      username,
-      email,
-      hashedPassword,
-      profileType,
-      JSON.stringify(interests || []),
-      JSON.stringify(desires || []),
-      JSON.stringify(fetishes || []),
-      location || null,
-      JSON.stringify(favoritedSuggestions || []) // Mapeia camelCase para snake_case
-    ];
-
-    const [result] = await pool.query(insertUserSql, values);
-    
     // 7. Prepara o objeto de resposta (sem dados sensíveis)
-    const newUser = {
-      id: result.insertId,
-      username: username,
-      email: email
+    const userResponse = {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
     };
 
-    console.log(`Perfil completo do usuário '${newUser.username}' cadastrado com sucesso!`);
-    res.status(201).json({ message: 'Usuário cadastrado com sucesso!', user: newUser });
+    console.log(`Perfil do usuário '${userResponse.name}' cadastrado com sucesso!`);
+    res.status(201).json({ message: 'Usuário cadastrado com sucesso!', user: userResponse });
 
   } catch (error) {
     console.error('Erro no registro do usuário:', error);
@@ -88,9 +84,9 @@ router.post('/register', async (req, res) => {
 
 
 // ==========================================================
-//              ROTA DE UPLOAD DE AVATAR (POST)
+//          ROTA DE UPLOAD DE AVATAR (POST)
 // ==========================================================
-// (Sem alterações aqui, o código continua o mesmo)
+// (Sem alterações aqui por enquanto)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/avatars/');
@@ -108,9 +104,9 @@ router.post('/avatar', authMiddleware, upload.single('avatar'), async (req, res)
 
 
 // ==========================================================
-//          ROTA PARA BUSCAR PERFIL DE USUÁRIO (GET)
+//      ROTA PARA BUSCAR PERFIL DE USUÁRIO (GET)
 // ==========================================================
-// (Sem alterações aqui, o código continua o mesmo)
+// (Sem alterações aqui por enquanto)
 router.get('/:id', async (req, res) => {
   // ... seu código de busca de perfil ...
 });
