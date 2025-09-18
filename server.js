@@ -1,7 +1,6 @@
 // server.js
 
-// 1. CARREGA AS VARIÁVEIS DE AMBIENTE DE FORMA EXPLÍCITA
-// Esta é a forma mais robusta de garantir que o arquivo .env seja encontrado
+// 1. CARREGA AS VARIÁVEIS DE AMBIENTE
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, './.env') });
 
@@ -13,17 +12,34 @@ const session = require('express-session');
 const passport = require('passport');
 const GitHubStrategy = require('passport-github2').Strategy;
 const userRoutes = require('./routes/userRoutes');
-const authRoutes = require('./routes/authRoutes');
+const authRoutes = require('./routes/authRoutes'); // Importamos as rotas de autenticação
 
 // 3. CONFIGURAÇÃO DO APP
 const app = express();
 const port = process.env.PORT || 3001;
 
 // 4. MIDDLEWARE
+// ==========================================================
+//                 CONFIGURAÇÃO DO CORS
+// ==========================================================
+const allowedOrigins = [
+    'http://localhost:3000',
+    'https://myextasyclub.com',     // <-- MUITO IMPORTANTE: SUBSTITUA AQUI
+    'https://myextasyclub.com/'  // <-- E AQUI (se tiver www)
+];
+
 app.use(cors({
-    origin: 'http://localhost:3000', 
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            callback(new Error('Acesso não permitido pelo CORS'));
+        }
+    },
     credentials: true
 }));
+// ==========================================================
+
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -44,7 +60,7 @@ app.use(passport.session());
 passport.use(new GitHubStrategy({
     clientID: process.env.GITHUB_CLIENT_ID,
     clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: "http://localhost:3001/auth/github/callback"
+    callbackURL: "http://localhost:3001/auth/github/callback" // ATENÇÃO: Em produção, isso precisa ser a URL do Render
   },
   function(accessToken, refreshToken, profile, done) {
     console.log("Usuário autenticado pelo GitHub:", profile.username);
@@ -86,9 +102,9 @@ app.post('/api/auth/logout', (req, res, next) => {
   });
 });
 
-// Suas rotas de usuário
-app.use('/api/users', userRoutes);
+// Rotas de Autenticação (Login) e Usuários (Registro)
 app.use('/api', authRoutes);
+app.use('/api/users', userRoutes);
 
 // 7. INICIAR O SERVIDOR
 app.listen(port, () => {
