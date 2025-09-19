@@ -1,4 +1,4 @@
-// Arquivo: prisma/schema.prisma (VERSÃO COMPLETA ATUALIZADA)
+// Arquivo: prisma/schema.prisma (COM O MAPA CORRETO PARA 'users')
 
 generator client {
   provider = "prisma-client-js"
@@ -24,9 +24,10 @@ model User {
   favorited_suggestions   String?
   createdAt               DateTime  @default(now())
   lastSeenAt              DateTime? @updatedAt
+  posts                   Post[]
 
-  // --- RELACIONAMENTO ADICIONADO ---
-  posts                   Post[]    // Um usuário pode ter vários posts
+  // --- A CORREÇÃO FINALÍSSIMA ---
+  @@map("users") // Mapeia para a tabela 'users' (minúsculo, plural)
 }
 
 
@@ -35,8 +36,9 @@ model Post {
   content   String   @db.Text
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // --- Relacionamento com o Usuário ---
   author    User     @relation(fields: [authorId], references: [id])
   authorId  Int
+
+  // Boa prática: vamos mapear esta também para minúsculo e plural
+  @@map("posts")
 }
