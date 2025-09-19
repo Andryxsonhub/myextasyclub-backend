@@ -1,4 +1,4 @@
-// server.js
+// server.js (SEU CÓDIGO ATUALIZADO)
 
 // 1. CARREGA AS VARIÁVEIS DE AMBIENTE
 const path = require('path');
@@ -12,7 +12,8 @@ const session = require('express-session');
 const passport = require('passport');
 const GitHubStrategy = require('passport-github2').Strategy;
 const userRoutes = require('./routes/userRoutes');
-const authRoutes = require('./routes/authRoutes'); // Importamos as rotas de autenticação
+const authRoutes = require('./routes/authRoutes');
+const postRoutes = require('./routes/postRoutes'); // <-- 1. LINHA ADICIONADA
 
 // 3. CONFIGURAÇÃO DO APP
 const app = express();
@@ -24,8 +25,8 @@ const port = process.env.PORT || 3001;
 // ==========================================================
 const allowedOrigins = [
     'http://localhost:3000',
-    'https://myextasyclub.com',     // <-- MUITO IMPORTANTE: SUBSTITUA AQUI
-    'https://myextasyclub.com/'  // <-- E AQUI (se tiver www)
+    'https://myextasyclub.com',
+    'https://myextasyclub.com/'
 ];
 
 app.use(cors({
@@ -60,7 +61,7 @@ app.use(passport.session());
 passport.use(new GitHubStrategy({
     clientID: process.env.GITHUB_CLIENT_ID,
     clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: "http://localhost:3001/auth/github/callback" // ATENÇÃO: Em produção, isso precisa ser a URL do Render
+    callbackURL: "http://localhost:3001/auth/github/callback"
   },
   function(accessToken, refreshToken, profile, done) {
     console.log("Usuário autenticado pelo GitHub:", profile.username);
@@ -71,7 +72,7 @@ passport.use(new GitHubStrategy({
 passport.serializeUser(function(user, done) {
     done(null, user);
 });
-  
+ 
 passport.deserializeUser(function(user, done) {
     done(null, user);
 });
@@ -105,6 +106,7 @@ app.post('/api/auth/logout', (req, res, next) => {
 // Rotas de Autenticação (Login) e Usuários (Registro)
 app.use('/api', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/posts', postRoutes); // <-- 2. LINHA ADICIONADA
 
 // 7. INICIAR O SERVIDOR
 app.listen(port, () => {

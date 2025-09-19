@@ -1,4 +1,4 @@
-// prisma/schema.prisma (Versão Final Corrigida com o campo 'location')
+// Arquivo: prisma/schema.prisma (VERSÃO COMPLETA ATUALIZADA)
 
 generator client {
   provider = "prisma-client-js"
@@ -14,30 +14,29 @@ model User {
   email                   String    @unique
   name                    String    @unique
   password                String
-  bio                     String?
-  profile_picture_url     String?   @map("profile_picture_url")
+  bio                     String?   @db.Text
+  profile_picture_url     String?
+  location                String?
+  gender                  String?
   interests               String?
   desires                 String?
   fetishes                String?
-  
-  // A LINHA QUE ESTAVA FALTANDO FOI ADICIONADA DE VOLTA AQUI
-  location                String?
-
-  favorited_suggestions   String?   @map("favorited_suggestions")
+  favorited_suggestions   String?
   createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-  gender                  String?
-  lastSeenAt              DateTime? @map("last_seen_at")
-  certificationLevel      Int       @default(0) @map("certification_level")
-  posts                   Post[]
+  lastSeenAt              DateTime? @updatedAt
+
+  // --- RELACIONAMENTO ADICIONADO ---
+  posts                   Post[]    // Um usuário pode ter vários posts
 }
 
+
 model Post {
-  id          Int      @id @default(autoincrement())
-  content     String
-  mediaUrl    String?  @map("media_url")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  author      User     @relation(fields: [authorId], references: [id])
-  authorId    Int      @map("author_id")
+  id        Int      @id @default(autoincrement())
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // --- Relacionamento com o Usuário ---
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  Int
 }

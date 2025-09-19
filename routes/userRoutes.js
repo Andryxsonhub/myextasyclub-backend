@@ -1,7 +1,6 @@
-// routes/userRoutes.js (Versão Final com mais dados no Profile)
+// Arquivo: routes/userRoutes.js (Versão Completa e Corrigida)
 
 const express = require('express');
-// ... (todos os outros imports continuam iguais)
 const multer = require('multer');
 const path = require('path');
 const bcrypt = require('bcryptjs');
@@ -13,10 +12,9 @@ const prisma = new PrismaClient();
 const router = express.Router();
 
 // ==========================================================
-//   ROTA DE REGISTRO (CORRIGIDA E COMPLETA)
+//   ROTA DE REGISTRO
 // ==========================================================
 router.post('/register', async (req, res) => {
-    // ... (código de registro continua o mesmo, sem alterações)
     try {
         const { email, password, username: name, interests, desires, fetishes, location, favoritedSuggestions } = req.body;
         if (!email || !password || !name) {
@@ -50,10 +48,9 @@ router.post('/register', async (req, res) => {
 });
 
 // ===============================================================
-//                      ROTA DE LOGIN
+//   ROTA DE LOGIN
 // ===============================================================
 router.post('/login', async (req, res) => {
-    // ... (código de login continua o mesmo, sem alterações)
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ message: 'E-mail e senha são obrigatórios.' });
@@ -72,7 +69,7 @@ router.post('/login', async (req, res) => {
 });
 
 // =======================================================================
-//            ROTA DO PERFIL (ATUALIZADA PARA ENVIAR MAIS DADOS)
+//   ROTA PARA BUSCAR O PERFIL DO USUÁRIO LOGADO
 // =======================================================================
 router.get('/profile', authMiddleware, async (req, res) => {
   try {
@@ -86,10 +83,9 @@ router.get('/profile', authMiddleware, async (req, res) => {
         bio: true,
         profile_picture_url: true,
         location: true,
-        // --- CAMPOS NOVOS ADICIONADOS À RESPOSTA ---
         gender: true,
-        createdAt: true, // Para calcular "Membro há..."
-        lastSeenAt: true, // Para "Último acesso"
+        createdAt: true,
+        lastSeenAt: true,
       }
     });
 
@@ -110,6 +106,48 @@ router.get('/profile', authMiddleware, async (req, res) => {
   }
 });
 
-// ... (O restante das suas rotas continua o mesmo) ...
+// =======================================================================
+//   ROTA PARA ATUALIZAR O PERFIL DO USUÁRIO
+// =======================================================================
+router.put('/profile', authMiddleware, async (req, res) => {
+    try {
+      // 1. Pega o ID do usuário que vem do token (garantido pelo authMiddleware)
+      const userId = req.user.userId;
+  
+      // 2. Pega os dados que o frontend vai enviar no corpo da requisição
+      const { name, location, bio, gender } = req.body;
+  
+      // 3. Usa o Prisma para encontrar o usuário pelo ID e atualizar seus dados
+      const updatedUser = await prisma.user.update({
+        where: {
+          id: userId,
+        },
+        data: {
+          name: name,
+          location: location,
+          bio: bio,
+          gender: gender,
+          // Se quiser permitir a edição de outros campos, adicione-os aqui
+        },
+      });
+  
+      // 4. Remove a senha do objeto antes de enviar de volta como resposta
+      delete updatedUser.password;
+  
+      // 5. Envia a resposta de sucesso com os dados atualizados
+      res.status(200).json({
+        message: 'Perfil atualizado com sucesso!',
+        user: updatedUser,
+      });
+  
+    } catch (error) {
+      console.error("Erro ao atualizar o perfil do usuário:", error);
+      // Erro comum: P2025 - Registro para atualizar não encontrado
+      if (error.code === 'P2025') {
+          return res.status(404).json({ message: "Usuário não encontrado." });
+      }
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  });
 
 module.exports = router;
