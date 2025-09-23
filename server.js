@@ -1,14 +1,14 @@
-// server.js (COM CAMINHOS DE IMPORTAÇÃO CORRIGIDOS DE VERDADE)
+// server.js (COM AS CORREÇÕES PARA PRODUÇÃO)
 
 // 1. CARREGA AS VARIÁVEIS DE AMBIENTE
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, './.env') });
 
 
-// 2. IMPORTS (AGORA CORRETOS, SEM '/src')
+// 2. IMPORTS
 const express = require('express');
 const cors = require('cors');
-const session = require('express-session');
+const session =require('express-session');
 const passport = require('passport');
 const GitHubStrategy = require('passport-github2').Strategy;
 const userRoutes = require('./routes/userRoutes');
@@ -24,7 +24,7 @@ const port = process.env.PORT || 3333;
 //   CONFIGURAÇÃO DE CORS DETALHADA
 // ==========================================================
 const corsOptions = {
-  origin: 'http://localhost:3000', 
+  origin: process.env.FRONTEND_URL, // <-- CORRIGIDO 1: Usa a variável de ambiente
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE", 
   credentials: true, 
   allowedHeaders: "Content-Type,Authorization" 
@@ -53,7 +53,7 @@ app.use(passport.session());
 passport.use(new GitHubStrategy({
     clientID: process.env.GITHUB_CLIENT_ID,
     clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: "http://localhost:3333/auth/github/callback"
+    callbackURL: `${process.env.BACKEND_URL}/auth/github/callback` // <-- CORRIGIDO 2: Usa a variável de ambiente
   },
   function(accessToken, refreshToken, profile, done) {
     console.log("Usuário autenticado pelo GitHub:", profile.username);
@@ -73,9 +73,9 @@ passport.deserializeUser(function(user, done) {
 // Rotas de Autenticação com GitHub
 app.get('/auth/github', passport.authenticate('github', { scope: [ 'user:email' ] }));
 app.get('/auth/github/callback', 
-  passport.authenticate('github', { failureRedirect: 'http://localhost:3000/entrar' }),
+  passport.authenticate('github', { failureRedirect: `${process.env.FRONTEND_URL}/entrar` }), // <-- CORRIGIDO 3: Usa a variável
   function(req, res) {
-    res.redirect('http://localhost:3000/auth/github/callback');
+    res.redirect(`${process.env.FRONTEND_URL}/auth/github/callback`); // <-- CORRIGIDO 3: Usa a variável
   }
 );
 app.get('/api/auth/profile', (req, res) => {
@@ -105,4 +105,3 @@ app.use('/api/payments', paymentRoutes);
 app.listen(port, () => {
   console.log(`Servidor backend rodando e escutando na porta ${port}`);
 });
-
