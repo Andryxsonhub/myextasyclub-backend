@@ -1,11 +1,11 @@
-// server.js (CÓDIGO COMPLETO E CORRIGIDO)
+// server.js (COM CAMINHOS DE IMPORTAÇÃO CORRIGIDOS DE VERDADE)
 
 // 1. CARREGA AS VARIÁVEIS DE AMBIENTE
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, './.env') });
 
 
-// 2. IMPORTS
+// 2. IMPORTS (AGORA CORRETOS, SEM '/src')
 const express = require('express');
 const cors = require('cors');
 const session = require('express-session');
@@ -14,22 +14,23 @@ const GitHubStrategy = require('passport-github2').Strategy;
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const postRoutes = require('./routes/postRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 // 3. CONFIGURAÇÃO DO APP
 const app = express();
-// ALTERAÇÃO CRÍTICA: Ajustamos a porta para 3333 para combinar com o frontend
 const port = process.env.PORT || 3333;
 
-// 4. MIDDLEWARE
 // ==========================================================
-//                 CONFIGURAÇÃO DO CORS
+//   CONFIGURAÇÃO DE CORS DETALHADA
 // ==========================================================
-// A configuração do CORS permite que o seu frontend (rodando em localhost:3000)
-// se comunique com o seu backend (rodando em localhost:3333)
-app.use(cors({
-    origin: 'http://localhost:3000', // Permite requisições vindas do seu app React
-    credentials: true // Permite o envio de cookies de sessão
-}));
+const corsOptions = {
+  origin: 'http://localhost:3000', 
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE", 
+  credentials: true, 
+  allowedHeaders: "Content-Type,Authorization" 
+};
+
+app.use(cors(corsOptions));
 // ==========================================================
 
 app.use(express.json());
@@ -52,7 +53,7 @@ app.use(passport.session());
 passport.use(new GitHubStrategy({
     clientID: process.env.GITHUB_CLIENT_ID,
     clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: "http://localhost:3333/auth/github/callback" // Ajustado para a porta correta
+    callbackURL: "http://localhost:3333/auth/github/callback"
   },
   function(accessToken, refreshToken, profile, done) {
     console.log("Usuário autenticado pelo GitHub:", profile.username);
@@ -94,12 +95,14 @@ app.post('/api/auth/logout', (req, res, next) => {
   });
 });
 
-// Rotas de Autenticação (Login) e Usuários (Registro)
+// Rotas da Aplicação
 app.use('/api', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // 7. INICIAR O SERVIDOR
 app.listen(port, () => {
   console.log(`Servidor backend rodando e escutando na porta ${port}`);
 });
+
