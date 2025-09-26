@@ -1,4 +1,5 @@
-// Arquivo: prisma/schema.prisma (COM O MAPA CORRETO PARA 'users')
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
@@ -10,35 +11,52 @@ datasource db {
 }
 
 model User {
-  id                      Int       @id @default(autoincrement())
-  email                   String    @unique
-  name                    String    @unique
-  password                String
-  bio                     String?   @db.Text
-  profile_picture_url     String?
-  location                String?
-  gender                  String?
-  interests               String?
-  desires                 String?
-  fetishes                String?
-  favorited_suggestions   String?
-  createdAt               DateTime  @default(now())
-  lastSeenAt              DateTime? @updatedAt
-  posts                   Post[]
+  id                  Int       @id @default(autoincrement())
+  email               String    @unique
+  name                String
+  password            String
+  bio                 String?   @db.Text
+  location            String?
+  gender              String?
+  profilePictureUrl   String?   @map("profile_picture_url") @db.VarChar(255)
+  createdAt           DateTime  @default(now()) @map("created_at")
+  lastSeenAt          DateTime? @map("last_seen_at")
+  posts               Post[]
 
-  // --- A CORREÇÃO FINALÍSSIMA ---
-  @@map("users") // Mapeia para a tabela 'users' (minúsculo, plural)
+  @@map("users")
 }
-
 
 model Post {
   id        Int      @id @default(autoincrement())
   content   String   @db.Text
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
   author    User     @relation(fields: [authorId], references: [id])
-  authorId  Int
+  authorId  Int      @map("author_id")
 
-  // Boa prática: vamos mapear esta também para minúsculo e plural
   @@map("posts")
 }
+```
+
+#### Etapa 2: Criar a Migração de Correção
+
+Agora que a "planta" está correta, vamos criar a "ordem de serviço" para os construtores.
+
+1.  **No terminal (Git Bash)**, dentro da pasta do seu projeto **backend** (`myextasyclub-backend`).
+2.  Execute o seguinte comando. Ele vai criar um novo ficheiro de migração que adiciona a coluna em falta.
+    ```bash
+    npx prisma migrate dev --name fix-created-at-column
+    ```
+
+#### Etapa 3: Enviar a Correção para o GitHub
+
+1.  Ainda no terminal, envie o seu `schema.prisma` atualizado e a nova pasta de migração para o GitHub:
+    ```bash
+    git add .
+    ```
+    ```bash
+    git commit -m "fix: Corrige nome da coluna created_at e garante mapeamento"
+    ```
+    ```bash
+    git push origin main
+    
+
