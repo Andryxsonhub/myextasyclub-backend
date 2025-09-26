@@ -35,28 +35,4 @@ model Post {
 
   @@map("posts")
 }
-```
-
-#### Etapa 2: Criar a Migração de Correção
-
-Agora que a "planta" está correta, vamos criar a "ordem de serviço" para os construtores.
-
-1.  **No terminal (Git Bash)**, dentro da pasta do seu projeto **backend** (`myextasyclub-backend`).
-2.  Execute o seguinte comando. Ele vai criar um novo ficheiro de migração que adiciona a coluna em falta.
-    ```bash
-    npx prisma migrate dev --name fix-created-at-column
-    ```
-
-#### Etapa 3: Enviar a Correção para o GitHub
-
-1.  Ainda no terminal, envie o seu `schema.prisma` atualizado e a nova pasta de migração para o GitHub:
-    ```bash
-    git add .
-    ```
-    ```bash
-    git commit -m "fix: Corrige nome da coluna created_at e garante mapeamento"
-    ```
-    ```bash
-    git push origin main
-    
 
