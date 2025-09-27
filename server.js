@@ -8,8 +8,9 @@ const cors = require('cors');
 const session = require('express-session');
 const passport = require('passport');
 const GitHubStrategy = require('passport-github2').Strategy;
-const bcrypt = require('bcryptjs'); // Importação necessária para a rota de emergência
-const { PrismaClient } = require('@prisma/client'); // Importação necessária
+const bcrypt = require('bcryptjs');
+const { PrismaClient } = require('@prisma/client');
+const jwt = require('jsonwebtoken'); // Importação adicionada
 
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
@@ -19,7 +20,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 // === 3. CONFIGURAÇÃO DO EXPRESS ===
 const app = express();
 const port = process.env.PORT || 3333;
-const prisma = new PrismaClient(); // Instância do Prisma necessária
+const prisma = new PrismaClient();
 
 // === 4. CORS (Permitir comunicação com o frontend) ===
 const allowedOrigins = [
@@ -49,8 +50,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
 // ==========================================================
-//  !!! ROTA DE EMERGÊNCIA PARA O REGISTO !!!
-//  Esta rota vai responder ao chamado errado do frontend.
+//  !!! ROTA DE EMERGÊNCIA PARA O REGISTO (CORRIGIDA) !!!
+//  Agora ela devolve o token corretamente, como a rota de login.
 // ==========================================================
 app.post('/register', async (req, res) => {
     console.log("ROTA DE EMERGÊNCIA /register ATIVADA!");
@@ -77,16 +78,17 @@ app.post('/register', async (req, res) => {
             },
         });
 
-        // Após o registo, tentamos fazer o login para devolver o token
-        const token = require('jsonwebtoken').sign(
+        // Após o registo, criamos o token
+        const token = jwt.sign(
             { userId: newUser.id, name: newUser.name },
             process.env.JWT_SECRET,
             { expiresIn: '1h' }
         );
 
+        // Devolvemos a resposta no formato que o frontend espera
         res.status(201).json({
             message: 'Utilizador criado com sucesso!',
-            token: token,
+            token: token, // <-- A CHAVE ESTÁ AQUI
             user: { id: newUser.id, name: newUser.name, email: newUser.email }
         });
 
@@ -99,7 +101,6 @@ app.post('/register', async (req, res) => {
 
 
 // === 6. SESSION E PASSPORT (Login com GitHub) ===
-// ... (o resto do seu código de session e passport continua igual)
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
