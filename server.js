@@ -1,4 +1,4 @@
-// ARQUIVO PRINCIPAL DO SERVIDOR (VERSÃO FINAL COM ROTA /auth/me)
+// backend/server.js (VERSÃO FINAL CORRIGIDA PÓS-CONFLITO)
 
 // === 1. CARREGA AS VARIÁVEIS DE AMBIENTE (.env) ===
 const path = require('path');
@@ -17,8 +17,6 @@ const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const postRoutes = require('./routes/postRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
-
-// ALTERAÇÃO 1: Importamos o nosso novo middleware
 const authMiddleware = require('./middleware/authMiddleware');
 
 // === 3. CONFIGURAÇÃO DO EXPRESS ===
@@ -82,10 +80,7 @@ app.post('/api/auth/logout', (req, res, next) => {
 // === 8. ROTAS DA APLICAÇÃO ===
 app.use('/api', authRoutes); // Suas rotas de /login, /register
 
-// ALTERAÇÃO 2: Adicionamos a rota /me que o frontend precisa, protegida pelo middleware.
 app.get('/api/auth/me', authMiddleware, (req, res) => {
-  // O middleware já fez todo o trabalho de validação.
-  // Agora só precisamos enviar os dados do usuário de volta.
   res.status(200).json(req.user);
 });
 
