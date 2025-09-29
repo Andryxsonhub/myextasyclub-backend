@@ -13,11 +13,15 @@ datasource db {
 model User {
   id                  Int       @id @default(autoincrement())
   email               String    @unique
-  name                String
+  name                String    @unique
   password            String
+  profileType         String?   @map("profile_type")
   bio                 String?   @db.Text
   location            String?
   gender              String?
+  interests           Json?
+  desires             Json?
+  fetishes            Json?
   profilePictureUrl   String?   @map("profile_picture_url") @db.VarChar(255)
   createdAt           DateTime  @default(now()) @map("created_at")
   lastSeenAt          DateTime? @map("last_seen_at")
@@ -35,4 +39,3 @@ model Post {
 
   @@map("posts")
 }
-
