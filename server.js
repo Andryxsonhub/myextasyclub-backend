@@ -1,4 +1,4 @@
-// backend/server.js (VERSÃO FINAL CORRIGIDA PÓS-CONFLITO)
+// backend/server.js (VERSÃO FINAL COM ROTA /me CORRIGIDA)
 
 // === 1. CARREGA AS VARIÁVEIS DE AMBIENTE (.env) ===
 const path = require('path');
@@ -12,11 +12,14 @@ const passport = require('passport');
 const GitHubStrategy = require('passport-github2').Strategy;
 const http = require('http');
 const { Server } = require("socket.io");
+const { PrismaClient } = require('@prisma/client'); // Importa o Prisma Client
+const prisma = new PrismaClient(); // Cria uma instância do Prisma
 
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const postRoutes = require('./routes/postRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const pimentaRoutes = require('./routes/pimentaRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
 
 // === 3. CONFIGURAÇÃO DO EXPRESS ===
@@ -78,10 +81,29 @@ app.post('/api/auth/logout', (req, res, next) => {
 });
 
 // === 8. ROTAS DA APLICAÇÃO ===
-app.use('/api', authRoutes); // Suas rotas de /login, /register
+app.use('/api', authRoutes);
+app.use('/api/pimentas', pimentaRoutes);
 
-app.get('/api/auth/me', authMiddleware, (req, res) => {
-  res.status(200).json(req.user);
+// ROTA ATUALIZADA PARA BUSCAR DADOS COMPLETOS DO USUÁRIO LOGADO
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
+  try {
+    // Busca o usuário completo do banco de dados usando o ID do token
+    const fullUser = await prisma.user.findUnique({
+      where: { id: req.user.id },
+    });
+
+    if (!fullUser) {
+      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    }
+
+    // Remove a senha antes de enviar a resposta para segurança
+    const { password, ...userWithoutPassword } = fullUser;
+    res.status(200).json(userWithoutPassword);
+
+  } catch (error) {
+    console.error("Erro ao buscar dados do usuário:", error);
+    res.status(500).json({ message: "Erro interno do servidor." });
+  }
 });
 
 app.use('/api/users', userRoutes);

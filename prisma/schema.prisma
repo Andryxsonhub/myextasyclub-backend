@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -11,21 +8,22 @@ datasource db {
 }
 
 model User {
-  id                  Int       @id @default(autoincrement())
-  email               String    @unique
-  name                String    @unique
-  password            String
-  profileType         String?   @map("profile_type")
-  bio                 String?   @db.Text
-  location            String?
-  gender              String?
-  interests           Json?
-  desires             Json?
-  fetishes            Json?
-  profilePictureUrl   String?   @map("profile_picture_url") @db.VarChar(255)
-  createdAt           DateTime  @default(now()) @map("created_at")
-  lastSeenAt          DateTime? @map("last_seen_at")
-  posts               Post[]
+  id                Int       @id @default(autoincrement())
+  email             String    @unique
+  name              String    @unique
+  password          String
+  bio               String?   @db.Text
+  profilePictureUrl String?   @map("profile_picture_url") @db.VarChar(255)
+  location          String?
+  gender            String?
+  createdAt         DateTime  @default(now()) @map("created_at")
+  lastSeenAt        DateTime? @map("last_seen_at")
+  desires           String?   @db.LongText
+  fetishes          String?   @db.LongText
+  interests         String?   @db.LongText
+  profileType       String?   @map("profile_type")
+  posts             Post[]
+  pimentaBalance    Int       @default(0) // <--- ADIÇÃO 1: SALDO DE PIMENTAS
 
   @@map("users")
 }
@@ -33,9 +31,21 @@ model User {
 model Post {
   id        Int      @id @default(autoincrement())
   content   String   @db.Text
+  authorId  Int      @map("author_id")
   createdAt DateTime @default(now()) @map("created_at")
   author    User     @relation(fields: [authorId], references: [id])
-  authorId  Int      @map("author_id")
 
+  @@index([authorId], map: "posts_author_id_fkey")
   @@map("posts")
+}
+
+// ADIÇÃO 2: NOVA TABELA PARA OS PACOTES DE PIMENTAS
+model PimentaPackage {
+  id            Int      @id @default(autoincrement())
+  name          String   // Ex: "Pacote Iniciante", "Melhor Oferta"
+  priceInCents  Int      // Preço em centavos (ex: 990 para R$ 9,90)
+  pimentaAmount Int      // Quantidade de pimentas no pacote (ex: 1000)
+  createdAt     DateTime @default(now())
+
+  @@map("pimenta_packages")
 }
