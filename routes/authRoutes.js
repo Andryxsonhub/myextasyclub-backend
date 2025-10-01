@@ -1,5 +1,3 @@
-// routes/authRoutes.js (VERSÃO FINAL)
-
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -31,10 +29,13 @@ router.post('/register', async (req, res) => {
         name,
         email,
         password: hashedPassword,
-        profileType, // Agora o Prisma conhece este campo!
-        interests,
-        desires,
-        fetishes,
+        profileType,
+        // ======================= CORREÇÃO APLICADA AQUI =======================
+        // Convertemos os arrays para uma string JSON antes de salvar no banco.
+        interests: interests ? JSON.stringify(interests) : null,
+        desires: desires ? JSON.stringify(desires) : null,
+        fetishes: fetishes ? JSON.stringify(fetishes) : null,
+        // ======================================================================
         location,
       },
     });
@@ -47,7 +48,6 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// ... (o resto do arquivo de login continua igual)
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;

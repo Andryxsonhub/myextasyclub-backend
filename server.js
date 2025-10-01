@@ -1,5 +1,3 @@
-// backend/server.js (VERSÃO FINAL COM ROTA /me CORRIGIDA)
-
 // === 1. CARREGA AS VARIÁVEIS DE AMBIENTE (.env) ===
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, './.env') });
@@ -67,7 +65,7 @@ app.get('/auth/github/callback',
   (req, res) => { res.redirect(`${process.env.FRONTEND_URL}/auth/github/callback`); }
 );
 app.get('/api/auth/profile', (req, res) => {
-  if (req.isAuthenticated()) { res.json({ user: req.user }); } 
+  if (req.isAuthenticated()) { res.json({ user: req.user }); }  
   else { res.status(401).json({ message: 'Usuário não autenticado.' }); }
 });
 app.post('/api/auth/logout', (req, res, next) => {
@@ -89,7 +87,7 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     // Busca o usuário completo do banco de dados usando o ID do token
     const fullUser = await prisma.user.findUnique({
-      where: { id: req.user.id },
+      where: { id: req.user.userId }, // <-- CORREÇÃO: Usar 'userId' que vem do token
     });
 
     if (!fullUser) {
