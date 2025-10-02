@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma (VERSÃO CORRETA E COMPLETA)
+// backend/prisma/schema.prisma (VERSÃO ATUALIZADA COM DATA DE NASCIMENTO)
 
 generator client {
   provider = "prisma-client-js"
@@ -24,10 +24,14 @@ model User {
   fetishes          String?   @db.LongText
   interests         String?   @db.LongText
   profileType       String?   @map("profile_type")
-  posts             Post[]
   pimentaBalance    Int       @default(0)
+  
+  // !!! CAMPO NOVO ADICIONADO AQUI !!!
+  dateOfBirth       DateTime? @map("date_of_birth") @db.Date
+
+  posts             Post[]
   photos            Photo[]
-  videos            Video[] // <-- ADICIONADO AQUI
+  videos            Video[]
 
   @@map("users")
 }
@@ -65,7 +69,6 @@ model Photo {
   @@map("photos")
 }
 
-// vvv MODELO NOVO ADICIONADO ABAIXO vvv
 model Video {
   id          Int      @id @default(autoincrement())
   url         String

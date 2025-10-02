@@ -1,4 +1,4 @@
-// Arquivo: routes/postRoutes.js (COM A NOVA ROTA DE BUSCA)
+// myextasyclub-backend/routes/postRoutes.js (VERSÃO COMPLETA E ATUALIZADA)
 
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
@@ -7,10 +7,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const prisma = new PrismaClient();
 const router = express.Router();
 
-// ==========================================================
-//   ROTA PARA CRIAR UMA NOVA PUBLICAÇÃO (POST)
-//   (POST /api/posts) - JÁ EXISTENTE
-// ==========================================================
+// ROTA PARA CRIAR UMA NOVA PUBLICAÇÃO (POST DE TEXTO)
 router.post('/', authMiddleware, async (req, res) => {
   try {
     const { content } = req.body;
@@ -35,38 +32,89 @@ router.post('/', authMiddleware, async (req, res) => {
   }
 });
 
-// ==========================================================
-//   !!! ROTA NOVA !!! - PARA BUSCAR AS PUBLICAÇÕES
-//   (GET /api/posts)
-// ==========================================================
+// ROTA PARA BUSCAR AS PUBLICAÇÕES DO USUÁRIO LOGADO
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    // Pegamos o ID do usuário logado, que o authMiddleware nos fornece
     const userId = req.user.userId;
 
-    // Usamos o Prisma para buscar no banco TODOS os posts
-    // ONDE o 'authorId' é igual ao ID do nosso usuário
     const posts = await prisma.post.findMany({
       where: {
         authorId: userId,
       },
       orderBy: {
-        createdAt: 'desc', // Ordenamos do mais novo para o mais antigo
+        createdAt: 'desc',
       },
-      // Opcional: Se quiséssemos incluir dados do autor em cada post
-      // include: {
-      //   author: {
-      //     select: { name: true, profile_picture_url: true }
-      //   }
-      // }
     });
-
-    // Enviamos a lista de posts encontrados como resposta
     res.status(200).json(posts);
 
   } catch (error) {
     console.error("Erro ao buscar publicações:", error);
     res.status(500).json({ message: "Erro interno do servidor." });
+  }
+});
+
+
+// ==========================================================
+// --- !!! NOVA ROTA PARA O FEED DA PÁGINA EXPLORAR !!! ---
+// ==========================================================
+router.get('/feed', authMiddleware, async (req, res) => {
+  try {
+    // 1. Buscar as últimas 20 fotos, incluindo dados do autor
+    const photos = await prisma.photo.findMany({
+      take: 20,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        author: {
+          select: { id: true, name: true, profilePictureUrl: true },
+        },
+      },
+    });
+
+    // 2. Buscar os últimos 20 vídeos, incluindo dados do autor
+    const videos = await prisma.video.findMany({
+      take: 20,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        author: {
+          select: { id: true, name: true, profilePictureUrl: true },
+        },
+      },
+    });
+
+    // 3. Formatar as fotos para o padrão do ContentCard
+    const formattedPhotos = photos.map(photo => ({
+      id: photo.id,
+      userid: photo.author.id,
+      media_type: 'image',
+      media_url: photo.url,
+      author_name: photo.author.name,
+      author_avatar_url: photo.author.profilePictureUrl,
+      likes_count: 0, // Placeholder, funcionalidade a ser criada
+      createdAt: photo.createdAt
+    }));
+
+    // 4. Formatar os vídeos para o padrão do ContentCard
+    const formattedVideos = videos.map(video => ({
+      id: video.id,
+      userid: video.author.id,
+      media_type: 'video',
+      media_url: video.url,
+      author_name: video.author.name,
+      author_avatar_url: video.author.profilePictureUrl,
+      likes_count: 0, // Placeholder, funcionalidade a ser criada
+      createdAt: video.createdAt
+    }));
+
+    // 5. Juntar os dois arrays e ordenar pela data de criação
+    const combinedFeed = [...formattedPhotos, ...formattedVideos];
+    combinedFeed.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // 6. Enviar a resposta final (limitada aos 40 itens mais recentes)
+    res.status(200).json(combinedFeed.slice(0, 40));
+
+  } catch (error) {
+    console.error("Erro ao buscar o feed da comunidade:", error);
+    res.status(500).json({ message: "Erro interno do servidor ao buscar o feed." });
   }
 });
 
