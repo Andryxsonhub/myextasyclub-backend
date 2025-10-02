@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma (VERSÃO COMPLETA E FINAL)
+// backend/prisma/schema.prisma (VERSÃO CORRETA E COMPLETA)
 
 generator client {
   provider = "prisma-client-js"
@@ -26,9 +26,8 @@ model User {
   profileType       String?   @map("profile_type")
   posts             Post[]
   pimentaBalance    Int       @default(0)
-
-  // RELAÇÃO ADICIONADA: Um usuário pode ter muitas fotos
   photos            Photo[]
+  videos            Video[] // <-- ADICIONADO AQUI
 
   @@map("users")
 }
@@ -45,28 +44,36 @@ model Post {
 }
 
 model PimentaPackage {
-  id           Int      @id @default(autoincrement())
-  name         String
-  priceInCents Int
+  id            Int      @id @default(autoincrement())
+  name          String
+  priceInCents  Int
   pimentaAmount Int
-  createdAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
 
   @@map("pimenta_packages")
 }
 
-// ==========================================================
-// NOVA TABELA PARA A GALERIA DE FOTOS
-// ==========================================================
 model Photo {
   id          Int      @id @default(autoincrement())
-  url         String   // Caminho para a imagem, ex: "/uploads/photos/photo-1-12345.jpg"
-  description String?  @db.Text // Descrição opcional que o usuário vai digitar
-  authorId    Int      @map("author_id") // Chave estrangeira para ligar a foto ao usuário
-  createdAt   DateTime @default(now()) @map("created_at") // Data de criação
-
-  // Define a relação com o model User
+  url         String
+  description String?  @db.Text
+  authorId    Int      @map("author_id")
+  createdAt   DateTime @default(now()) @map("created_at")
   author      User     @relation(fields: [authorId], references: [id])
 
   @@index([authorId])
   @@map("photos")
+}
+
+// vvv MODELO NOVO ADICIONADO ABAIXO vvv
+model Video {
+  id          Int      @id @default(autoincrement())
+  url         String
+  description String?  @db.Text
+  authorId    Int      @map("author_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  author      User     @relation(fields: [authorId], references: [id])
+
+  @@index([authorId])
+  @@map("videos")
 }
