@@ -1,3 +1,5 @@
+// backend/prisma/schema.prisma (VERSÃO COMPLETA E FINAL)
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -23,7 +25,10 @@ model User {
   interests         String?   @db.LongText
   profileType       String?   @map("profile_type")
   posts             Post[]
-  pimentaBalance    Int       @default(0) // <--- ADIÇÃO 1: SALDO DE PIMENTAS
+  pimentaBalance    Int       @default(0)
+
+  // RELAÇÃO ADICIONADA: Um usuário pode ter muitas fotos
+  photos            Photo[]
 
   @@map("users")
 }
@@ -39,13 +44,29 @@ model Post {
   @@map("posts")
 }
 
-// ADIÇÃO 2: NOVA TABELA PARA OS PACOTES DE PIMENTAS
 model PimentaPackage {
-  id            Int      @id @default(autoincrement())
-  name          String   // Ex: "Pacote Iniciante", "Melhor Oferta"
-  priceInCents  Int      // Preço em centavos (ex: 990 para R$ 9,90)
-  pimentaAmount Int      // Quantidade de pimentas no pacote (ex: 1000)
-  createdAt     DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  name         String
+  priceInCents Int
+  pimentaAmount Int
+  createdAt    DateTime @default(now())
 
   @@map("pimenta_packages")
+}
+
+// ==========================================================
+// NOVA TABELA PARA A GALERIA DE FOTOS
+// ==========================================================
+model Photo {
+  id          Int      @id @default(autoincrement())
+  url         String   // Caminho para a imagem, ex: "/uploads/photos/photo-1-12345.jpg"
+  description String?  @db.Text // Descrição opcional que o usuário vai digitar
+  authorId    Int      @map("author_id") // Chave estrangeira para ligar a foto ao usuário
+  createdAt   DateTime @default(now()) @map("created_at") // Data de criação
+
+  // Define a relação com o model User
+  author      User     @relation(fields: [authorId], references: [id])
+
+  @@index([authorId])
+  @@map("photos")
 }
