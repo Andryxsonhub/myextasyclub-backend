@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma (VERSÃO ATUALIZADA COM DATA DE NASCIMENTO)
+// backend/prisma/schema.prisma (VERSÃO 100% COMPLETA E CORRIGIDA)
 
 generator client {
   provider = "prisma-client-js"
@@ -25,13 +25,12 @@ model User {
   interests         String?   @db.LongText
   profileType       String?   @map("profile_type")
   pimentaBalance    Int       @default(0)
-  
-  // !!! CAMPO NOVO ADICIONADO AQUI !!!
   dateOfBirth       DateTime? @map("date_of_birth") @db.Date
 
-  posts             Post[]
-  photos            Photo[]
-  videos            Video[]
+  posts        Post[]
+  photos       Photo[]
+  videos       Video[]
+  transactions Transaction[]
 
   @@map("users")
 }
@@ -58,25 +57,40 @@ model PimentaPackage {
 }
 
 model Photo {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   url         String
-  description String?  @db.Text
-  authorId    Int      @map("author_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  author      User     @relation(fields: [authorId], references: [id])
+  description String?   @db.Text
+  authorId    Int       @map("author_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  author      User      @relation(fields: [authorId], references: [id])
 
   @@index([authorId])
   @@map("photos")
 }
 
 model Video {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   url         String
-  description String?  @db.Text
-  authorId    Int      @map("author_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  author      User     @relation(fields: [authorId], references: [id])
+  description String?   @db.Text
+  authorId    Int       @map("author_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  author      User      @relation(fields: [authorId], references: [id])
 
   @@index([authorId])
   @@map("videos")
+}
+
+model Transaction {
+  id              String    @id @default(cuid())
+  userId          Int
+  user            User      @relation(fields: [userId], references: [id])
+  packageId       String    @map("package_id")
+  packageName     String    @map("package_name")
+  pimentaAmount   Int       @map("pimenta_amount")
+  amountInCents   Int       @map("amount_in_cents")
+  pagbankChargeId String?   @unique @map("pagbank_charge_id")
+  status          String
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@map("transactions")
 }
