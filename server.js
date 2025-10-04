@@ -1,4 +1,4 @@
-// backend/server.js (VERSÃO FINAL - O SEU CÓDIGO COM A ROTA DE LIVES)
+// backend/server.js (VERSÃO FINAL E LIMPA)
 
 // === 1. CARREGA AS VARIÁVEIS DE AMBIENTE (.env) ===
 const path = require('path');
@@ -21,9 +21,6 @@ const postRoutes = require('./routes/postRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const pimentaRoutes = require('./routes/pimentaRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
-
-// ALTERAÇÃO 1: Importando as novas rotas de live
-const liveRoutes = require('./routes/liveRoutes');
 
 // === 3. CONFIGURAÇÃO DO EXPRESS ===
 const app = express();
@@ -90,24 +87,24 @@ app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/payments', paymentRoutes);
 
-// ALTERAÇÃO 2: Adicionando a rota para a API de lives
-app.use('/api/live', liveRoutes);
-
-// ROTA ATUALIZADA PARA BUSCAR DADOS COMPLETOS DO USUÁRIO LOGADO
+// ROTA PARA BUSCAR DADOS COMPLETOS DO USUÁRIO LOGADO
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
-  try {
-    const fullUser = await prisma.user.findUnique({
-      where: { id: req.user.userId },
-    });
-    if (!fullUser) {
-      return res.status(404).json({ message: 'Usuário não encontrado.' });
+    try {
+      const fullUser = await prisma.user.findUnique({
+        where: { id: req.user.userId },
+      });
+  
+      if (!fullUser) {
+        return res.status(404).json({ message: 'Usuário não encontrado.' });
+      }
+  
+      const { password, ...userWithoutPassword } = fullUser;
+      res.status(200).json(userWithoutPassword);
+  
+    } catch (error) {
+      console.error("Erro ao buscar dados do usuário:", error);
+      res.status(500).json({ message: "Erro interno do servidor." });
     }
-    const { password, ...userWithoutPassword } = fullUser;
-    res.status(200).json(userWithoutPassword);
-  } catch (error) {
-    console.error("Erro ao buscar dados do usuário:", error);
-    res.status(500).json({ message: "Erro interno do servidor." });
-  }
 });
 
 // === 9. CRIAR O SERVIDOR HTTP E O SERVIDOR SOCKET.IO ===
@@ -118,6 +115,10 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// CONECTANDO A ROTA LIVE COM O SOCKET.IO
+const liveRoutes = require('./routes/liveRoutes')(io);
+app.use('/api/live', liveRoutes);
 
 // === 10. LÓGICA DO CHAT (Socket.IO) ===
 io.on('connection', (socket) => {

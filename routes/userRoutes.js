@@ -1,4 +1,4 @@
-// myextasyclub-backend/routes/userRoutes.js (VERSÃO COMPLETA E CORRIGIDA)
+// myextasyclub-backend/routes/userRoutes.js (VERSÃO FINAL COM authorId CORRIGIDO)
 
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
@@ -113,8 +113,8 @@ router.put('/profile/avatar', authMiddleware, uploadAvatar.single('avatar'), asy
 
 router.get('/photos', authMiddleware, async (req, res) => {
     try {
-      // ALTERAÇÃO 1: Corrigido de 'authorId' para 'userId'
-      const photos = await prisma.photo.findMany({ where: { userId: req.user.userId }, orderBy: { createdAt: 'desc' } });
+      // CORREÇÃO AQUI: Trocado de 'userId' para 'authorId'
+      const photos = await prisma.photo.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
       res.status(200).json(photos);
     } catch (error) {
       console.error("Erro ao buscar as fotos do usuário:", error);
@@ -128,8 +128,8 @@ router.post('/photos', authMiddleware, uploadPhoto.single('photo'), async (req, 
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
     const filePath = req.file.path.replace(/\\/g, "/");
     const photoUrl = `/${filePath}`;
-    // ALTERAÇÃO 2: Corrigido de 'authorId' para 'userId'
-    const newPhoto = await prisma.photo.create({ data: { url: photoUrl, description: description, userId: req.user.userId, } });
+    // CORREÇÃO AQUI: Trocado de 'userId' para 'authorId'
+    const newPhoto = await prisma.photo.create({ data: { url: photoUrl, description: description, authorId: req.user.userId, } });
     res.status(201).json(newPhoto);
   } catch (error) {
     console.error("Erro ao fazer upload da foto:", error);
@@ -144,9 +144,9 @@ router.post('/photos', authMiddleware, uploadPhoto.single('photo'), async (req, 
 
 router.get('/videos', authMiddleware, async (req, res) => {
   try {
-    // ALTERAÇÃO 3: Corrigido de 'authorId' para 'userId'
+    // CORREÇÃO AQUI: Trocado de 'userId' para 'authorId'
     const videos = await prisma.video.findMany({
-      where: { userId: req.user.userId },
+      where: { authorId: req.user.userId },
       orderBy: { createdAt: 'desc' },
     });
     res.status(200).json(videos);
@@ -164,12 +164,12 @@ router.post('/videos', authMiddleware, uploadVideo.single('video'), async (req, 
     }
     const filePath = req.file.path.replace(/\\/g, "/");
     const videoUrl = `/${filePath}`;
-    // ALTERAÇÃO 4: Corrigido de 'authorId' para 'userId'
+    // CORREÇÃO AQUI: Trocado de 'userId' para 'authorId'
     const newVideo = await prisma.video.create({
       data: {
         url: videoUrl,
         description: description,
-        userId: req.user.userId,
+        authorId: req.user.userId,
       },
     });
     res.status(201).json(newVideo);
@@ -181,7 +181,7 @@ router.post('/videos', authMiddleware, uploadVideo.single('video'), async (req, 
 
 
 // ==========================================================
-// --- ROTA DE BUSCA DE PERFIS (FILTROS) - VERSÃO AVANÇADA ---
+// --- ROTA DE BUSCA DE PERFIS (FILTROS) ---
 // ==========================================================
 
 router.get('/search', authMiddleware, async (req, res) => {
@@ -249,7 +249,6 @@ router.get('/search', authMiddleware, async (req, res) => {
     }
 
     console.log("Objeto 'where' final para a consulta Prisma:", JSON.stringify(whereClause, null, 2));
-
 
     const foundUsers = await prisma.user.findMany({
       where: whereClause,
