@@ -24,73 +24,79 @@ model User {
   fetishes          String?   @db.LongText
   interests         String?   @db.LongText
   profileType       String?   @map("profile_type")
-  pimentaBalance    Int       @default(0)
-  dateOfBirth       DateTime? @map("date_of_birth") @db.Date
-
-  posts        Post[]
-  photos       Photo[]
-  videos       Video[]
-  transactions Transaction[]
-
+  posts             Post[]
+  pimentaBalance    Int       @default(0) @map("pimenta_balance")
+  photos            Photo[]
+  videos            Video[]   // Relação com Vídeos
+  transactions      Transaction[]
+  live              Live?
   @@map("users")
 }
 
 model Post {
   id        Int      @id @default(autoincrement())
   content   String   @db.Text
-  authorId  Int      @map("author_id")
   createdAt DateTime @default(now()) @map("created_at")
+  authorId  Int      @map("author_id")
   author    User     @relation(fields: [authorId], references: [id])
-
-  @@index([authorId], map: "posts_author_id_fkey")
+  videoUrl  String?  @map("video_url")
+  imageUrl  String?  @map("image_url")
   @@map("posts")
 }
 
 model PimentaPackage {
-  id            Int      @id @default(autoincrement())
-  name          String
-  priceInCents  Int
-  pimentaAmount Int
-  createdAt     DateTime @default(now())
-
+  id          Int    @id @default(autoincrement())
+  name        String
+  amount      Int
+  price       Float
+  description String?
+  transactions Transaction[]
   @@map("pimenta_packages")
 }
 
 model Photo {
-  id          Int       @id @default(autoincrement())
-  url         String
-  description String?   @db.Text
-  authorId    Int       @map("author_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  author      User      @relation(fields: [authorId], references: [id])
-
-  @@index([authorId])
+  id        Int      @id @default(autoincrement())
+  url       String   @db.VarChar(255)
+  userId    Int      @map("user_id")
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now()) @map("created_at")
   @@map("photos")
 }
 
-model Video {
-  id          Int       @id @default(autoincrement())
-  url         String
-  description String?   @db.Text
-  authorId    Int       @map("author_id")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  author      User      @relation(fields: [authorId], references: [id])
-
-  @@index([authorId])
-  @@map("videos")
+model Transaction {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  user       User     @relation(fields: [userId], references: [id])
+  packageId  Int      @map("package_id")
+  package    PimentaPackage @relation(fields: [packageId], references: [id])
+  amount     Int
+  pricePaid  Float    @map("price_paid")
+  status     String
+  createdAt  DateTime @default(now()) @map("created_at")
+  @@map("transactions")
 }
 
-model Transaction {
-  id              String    @id @default(cuid())
-  userId          Int
-  user            User      @relation(fields: [userId], references: [id])
-  packageId       String    @map("package_id")
-  packageName     String    @map("package_name")
-  pimentaAmount   Int       @map("pimenta_amount")
-  amountInCents   Int       @map("amount_in_cents")
-  pagbankChargeId String?   @unique @map("pagbank_charge_id")
-  status          String
-  createdAt       DateTime  @default(now()) @map("created_at")
+model Live {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique @map("user_id")
+  roomName  String   @unique @map("room_name")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id])
+  @@map("lives")
+}
 
-  @@map("transactions")
+// ==========================================================
+// MODELO VIDEO ADICIONADO CORRETAMENTE
+// ==========================================================
+model Video {
+  id           Int      @id @default(autoincrement())
+  url          String   @db.VarChar(255)
+  thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(255)
+  title        String?  @db.VarChar(255)
+  description  String?  @db.Text
+  userId       Int      @map("user_id")
+  user         User     @relation(fields: [userId], references: [id])
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("videos")
 }
