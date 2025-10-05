@@ -4,7 +4,6 @@ require('dotenv').config();
 // === 2. IMPORTAÇÕES ===
 const express = require('express');
 const cors = require('cors');
-// ... (resto das suas importações)
 const path = require('path');
 const http = require('http');
 const { Server } = require("socket.io");
@@ -24,23 +23,18 @@ const liveRoutes = require('./routes/liveRoutes');
 const app = express();
 const port = process.env.PORT || 3333;
 
-// === 4. CORS (CORREÇÃO FINAL) ===
+// === 4. CORS (CORREÇÃO SIMPLIFICADA E ROBUSTA) ===
 // Lista de endereços (origens) que têm permissão para acessar nosso backend.
 const allowedOrigins = [
-  process.env.FRONTEND_URL,       // A URL que está no seu .env (ex: http://localhost:3000)
+  process.env.FRONTEND_URL,       // A URL de dev (ex: http://localhost:3000)
   'https://myextasyclub.com',     // A URL do seu site de produção
   'https://www.myextasyclub.com'  // A URL com 'www', por segurança
 ];
 
+// Passamos a lista diretamente para a opção 'origin'.
+// A biblioteca 'cors' cuidará da validação de forma segura.
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Permite a conexão se a origem estiver na nossa lista VIP
-    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: allowedOrigins,
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true,
   allowedHeaders: "Content-Type,Authorization",
@@ -49,7 +43,6 @@ app.use(cors(corsOptions));
 
 
 // === O RESTO DO SEU SERVER.JS CONTINUA IGUAL ===
-// ... (middlewares, rotas, etc.)
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -74,7 +67,7 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins, // Usa a mesma lista VIP
+    origin: allowedOrigins, // Usa a mesma lista VIP para o Socket.IO
     methods: ["GET", "POST"]
   }
 });
