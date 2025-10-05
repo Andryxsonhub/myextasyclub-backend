@@ -24,6 +24,7 @@ model User {
   fetishes          String?   @db.LongText
   interests         String?   @db.LongText
   profileType       String?   @map("profile_type")
+  favoritedSuggestions   String?  @db.LongText
   
   // A CORREÇÃO ESTÁ AQUI: ADICIONEI O @map("pimenta_balance") DE VOLTA
   pimentaBalance    Int       @default(0) @map("pimenta_balance")
