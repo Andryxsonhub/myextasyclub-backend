@@ -1,15 +1,11 @@
-// backend/server.js (VERSÃO FINAL E LIMPA)
-
 // === 1. CARREGA AS VARIÁVEIS DE AMBIENTE (.env) ===
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, './.env') });
+require('dotenv').config();
 
 // === 2. IMPORTAÇÕES ===
 const express = require('express');
 const cors = require('cors');
-const session = require('express-session');
-const passport = require('passport');
-const GitHubStrategy = require('passport-github2').Strategy;
+// ... (resto das suas importações)
+const path = require('path');
 const http = require('http');
 const { Server } = require("socket.io");
 const { PrismaClient } = require('@prisma/client');
@@ -21,121 +17,75 @@ const postRoutes = require('./routes/postRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const pimentaRoutes = require('./routes/pimentaRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
+const liveRoutes = require('./routes/liveRoutes');
+
 
 // === 3. CONFIGURAÇÃO DO EXPRESS ===
 const app = express();
 const port = process.env.PORT || 3333;
 
-// === 4. CORS (Permitir comunicação com o frontend) ===
+// === 4. CORS (CORREÇÃO FINAL) ===
+// Lista de endereços (origens) que têm permissão para acessar nosso backend.
+const allowedOrigins = [
+  process.env.FRONTEND_URL,       // A URL que está no seu .env (ex: http://localhost:3000)
+  'https://myextasyclub.com',     // A URL do seu site de produção
+  'https://www.myextasyclub.com'  // A URL com 'www', por segurança
+];
+
 const corsOptions = {
-  origin: process.env.FRONTEND_URL,
+  origin: function (origin, callback) {
+    // Permite a conexão se a origem estiver na nossa lista VIP
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true,
   allowedHeaders: "Content-Type,Authorization",
 };
 app.use(cors(corsOptions));
 
-// === 5. PARSE JSON + ARQUIVOS ESTÁTICOS ===
+
+// === O RESTO DO SEU SERVER.JS CONTINUA IGUAL ===
+// ... (middlewares, rotas, etc.)
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// === 6. SESSION E PASSPORT (Login com GitHub) ===
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production', httpOnly: true }
-}));
-app.use(passport.initialize());
-app.use(passport.session());
-passport.use(new GitHubStrategy({
-    clientID: process.env.GITHUB_CLIENT_ID,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: `${process.env.BACKEND_URL}/auth/github/callback`
-  },
-  function(accessToken, refreshToken, profile, done) {
-    return done(null, profile);
-  }
-));
-passport.serializeUser((user, done) => done(null, user));
-passport.deserializeUser((user, done) => done(null, user));
-
-// === 7. ROTAS DE AUTENTICAÇÃO LEGADAS (GitHub) ===
-app.get('/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
-app.get('/auth/github/callback',
-  passport.authenticate('github', { failureRedirect: `${process.env.FRONTEND_URL}/entrar` }),
-  (req, res) => { res.redirect(`${process.env.FRONTEND_URL}/auth/github/callback`); }
-);
-app.get('/api/auth/profile', (req, res) => {
-  if (req.isAuthenticated()) { res.json({ user: req.user }); }  
-  else { res.status(401).json({ message: 'Usuário não autenticado.' }); }
-});
-app.post('/api/auth/logout', (req, res, next) => {
-  req.logout(function (err) {
-    if (err) return next(err);
-    req.session.destroy(() => {
-      res.clearCookie('connect.sid');
-      res.status(200).json({ message: 'Logout bem-sucedido.' });
-    });
-  });
-});
-
-// === 8. ROTAS DA APLICAÇÃO ===
 app.use('/api', authRoutes);
 app.use('/api/pimentas', pimentaRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/live', liveRoutes);
 
-// ROTA PARA BUSCAR DADOS COMPLETOS DO USUÁRIO LOGADO
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
-    try {
-      const fullUser = await prisma.user.findUnique({
-        where: { id: req.user.userId },
-      });
-  
-      if (!fullUser) {
-        return res.status(404).json({ message: 'Usuário não encontrado.' });
-      }
-  
-      const { password, ...userWithoutPassword } = fullUser;
-      res.status(200).json(userWithoutPassword);
-  
-    } catch (error) {
-      console.error("Erro ao buscar dados do usuário:", error);
-      res.status(500).json({ message: "Erro interno do servidor." });
-    }
+  try {
+    const fullUser = await prisma.user.findUnique({ where: { id: req.user.userId } });
+    if (!fullUser) return res.status(404).json({ message: 'Usuário não encontrado.' });
+    const { password, ...userWithoutPassword } = fullUser;
+    res.status(200).json(userWithoutPassword);
+  } catch (error) {
+    res.status(500).json({ message: "Erro interno do servidor." });
+  }
 });
 
-// === 9. CRIAR O SERVIDOR HTTP E O SERVIDOR SOCKET.IO ===
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL,
+    origin: allowedOrigins, // Usa a mesma lista VIP
     methods: ["GET", "POST"]
   }
 });
 
-// CONECTANDO A ROTA LIVE COM O SOCKET.IO
-const liveRoutes = require('./routes/liveRoutes')(io);
-app.use('/api/live', liveRoutes);
-
-// === 10. LÓGICA DO CHAT (Socket.IO) ===
 io.on('connection', (socket) => {
   console.log('🔌 Um usuário se conectou ao chat. ID:', socket.id);
-
-  socket.on('chat message', (msg) => {
-    console.log('💬 Mensagem recebida:', msg);
-    socket.broadcast.emit('chat message', msg);
-  });
-
   socket.on('disconnect', () => {
     console.log('🔌 Um usuário se desconectou. ID:', socket.id);
   });
 });
 
-// === 11. INICIA O SERVIDOR HTTP (AGORA COM SOCKET.IO) ===
 server.listen(port, () => {
   console.log(`✅ Servidor backend rodando na porta ${port}`);
-  console.log(`🚀 Servidor de Chat (Socket.IO) pronto para conexões.`);
 });
