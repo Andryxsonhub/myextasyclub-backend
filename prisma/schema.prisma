@@ -19,6 +19,7 @@ model User {
   location          String?
   gender            String?
   createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
   lastSeenAt        DateTime? @map("last_seen_at")
   desires           String?   @db.LongText
   fetishes          String?   @db.LongText
