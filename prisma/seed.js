@@ -1,47 +1,46 @@
-// prisma/seed.js
+// backend/prisma/seed.js (O CÓDIGO CORRETO PARA ESTE ARQUIVO)
 
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// Lista dos pacotes de Pimentas que queremos vender
 const packagesData = [
   {
+    id: 1,
     name: 'Apoio Quente',
     pimentaAmount: 1000,
-    priceInCents: 990, // R$ 9,90
+    priceInCents: 990,
   },
   {
+    id: 2,
     name: 'Fogo Intenso',
-    pimentaAmount: 5500,
-    priceInCents: 4999, // R$ 49,99
+    pimentaAmount: 7500,
+    priceInCents: 4999,
   },
   {
+    id: 3,
     name: 'Explosão Vulcânica',
-    pimentaAmount: 10000,
-    priceInCents: 9990, // R$ 99,90
+    pimentaAmount: 15000,
+    priceInCents: 9990,
   },
 ];
 
 async function main() {
-  console.log(`Iniciando o seeding...`);
+  console.log('Iniciando o seeding...');
 
   for (const pkg of packagesData) {
-    const existingPackage = await prisma.pimentaPackage.findFirst({
-      where: { pimentaAmount: pkg.pimentaAmount },
+    await prisma.pimentaPackage.upsert({
+      where: { id: pkg.id },
+      update: { 
+        name: pkg.name,
+        pimentaAmount: pkg.pimentaAmount,
+        priceInCents: pkg.priceInCents,
+      },
+      create: pkg,
     });
-    
-    // Só cria o pacote se ele ainda não existir
-    if (!existingPackage) {
-      const pimentaPackage = await prisma.pimentaPackage.create({
-        data: pkg,
-      });
-      console.log(`Criado pacote: ${pimentaPackage.name} (${pimentaPackage.pimentaAmount} pimentas)`);
-    } else {
-      console.log(`Pacote de ${pkg.pimentaAmount} pimentas já existe. Pulando.`);
-    }
+    console.log(`Pacote '${pkg.name}' garantido no banco com ${pkg.pimentaAmount} pimentas.`);
   }
   
-  console.log(`Seeding finalizado.`);
+  console.log(`Seeding finalizado com sucesso!`);
 }
 
 main()
