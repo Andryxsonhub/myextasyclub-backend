@@ -1,4 +1,4 @@
-// backend/routes/paymentRoutes.js (VERSÃO FINAL UNIFICADA)
+// backend/routes/paymentRoutes.js (VERSÃO FINAL COM CORREÇÃO DE PARCELAS)
 
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
@@ -8,12 +8,13 @@ const axios = require('axios');
 const router = express.Router();
 const prisma = new PrismaClient();
 
-const PAGBANK_API_URL = 'https://api.pagseguro.com'; // Para testes, use 'https://sandbox.api.pagseguro.com'
+// SOLUÇÃO TEMPORÁRIA: Colando a URL do ngrok diretamente aqui
+const NGROK_URL = "https://6495c71fff12.ngrok-free.app"; 
+
+const PAGBANK_API_URL = 'https://sandbox.api.pagseguro.com';
 const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN;
 
-// ==========================================================
-// ROTA 1: Listar os pacotes de pimentas do BANCO DE DADOS
-// ==========================================================
+// ROTA 1: Listar pacotes
 router.get('/packages', authMiddleware, async (req, res) => {
   try {
     const packages = await prisma.pimentaPackage.findMany({
@@ -26,9 +27,7 @@ router.get('/packages', authMiddleware, async (req, res) => {
   }
 });
 
-// ==========================================================
-// ROTA 2: Criar uma nova ordem de pagamento com PIX
-// ==========================================================
+// ROTA 2: Criar ordem PIX
 router.post('/create-pix-order', authMiddleware, async (req, res) => {
   const { packageId } = req.body;
   const userId = req.user.userId;
@@ -49,7 +48,7 @@ router.post('/create-pix-order', authMiddleware, async (req, res) => {
       customer: {
         name: user.name,
         email: user.email,
-        tax_id: '12345678909', // Placeholder, precisaremos do CPF real do usuário no futuro
+        tax_id: '12345678909',
       },
       items: [{
         name: pimentaPackage.name,
@@ -60,8 +59,12 @@ router.post('/create-pix-order', authMiddleware, async (req, res) => {
         amount: { value: pimentaPackage.priceInCents },
         expiration_date: new Date(new Date().getTime() + 30 * 60 * 1000).toISOString(),
       }],
-      notification_urls: [`${process.env.BACKEND_URL}/api/payments/webhook`],
+      notification_urls: [`${NGROK_URL}/api/payments/webhook`],
     };
+
+    console.log("\n\n--- [INÍCIO LOG HOMOLOGAÇÃO PIX] ---");
+    console.log("REQUEST ENVIADO PARA PAGBANK (PIX):");
+    console.log(JSON.stringify(orderData, null, 2));
 
     const response = await axios.post(`${PAGBANK_API_URL}/orders`, orderData, {
       headers: {
@@ -71,6 +74,10 @@ router.post('/create-pix-order', authMiddleware, async (req, res) => {
     });
 
     const pagbankOrder = response.data;
+    
+    console.log("\nRESPONSE RECEBIDO DO PAGBANK (PIX):");
+    console.log(JSON.stringify(pagbankOrder, null, 2));
+    console.log("--- [FIM LOG HOMOLOGAÇÃO PIX] ---\n\n");
 
     await prisma.transaction.create({
       data: {
@@ -92,14 +99,11 @@ router.post('/create-pix-order', authMiddleware, async (req, res) => {
   }
 });
 
-// ==========================================================
-// ROTA 3: Sua lógica de CARTÃO DE CRÉDITO (adaptada para usar o banco de dados)
-// ==========================================================
+// ROTA 3: Cartão de Crédito
 router.post('/process-card', authMiddleware, async (req, res) => {
     const { packageId, encryptedCard, holderName, holderDocument } = req.body;
     const userId = req.user.userId;
 
-    // ALTERAÇÃO: Busca o pacote do banco de dados, em vez da lista fixa
     const selectedPackage = await prisma.pimentaPackage.findUnique({ where: { id: packageId } });
     if (!selectedPackage) {
         return res.status(400).json({ message: 'Pacote inválido ou não encontrado.' });
@@ -128,6 +132,8 @@ router.post('/process-card', authMiddleware, async (req, res) => {
             },
             payment_method: {
                 type: 'CREDIT_CARD',
+                installments: 1, // <-- CAMPO CORRIGIDO
+                capture: true,   // <-- CAMPO CORRIGIDO
                 card: {
                     encrypted: encryptedCard,
                     holder: { name: holderName }
@@ -137,6 +143,10 @@ router.post('/process-card', authMiddleware, async (req, res) => {
     };
 
     try {
+        console.log("\n\n--- [INÍCIO LOG HOMOLOGAÇÃO CARTÃO] ---");
+        console.log("REQUEST ENVIADO PARA PAGBANK (CARTÃO):");
+        console.log(JSON.stringify(pagbankOrderPayload, null, 2));
+
         const pagbankResponse = await axios.post(
             `${PAGBANK_API_URL}/orders`,
             pagbankOrderPayload,
@@ -147,6 +157,10 @@ router.post('/process-card', authMiddleware, async (req, res) => {
                 },
             }
         );
+        
+        console.log("\nRESPONSE RECEBIDO DO PAGBANK (CARTÃO):");
+        console.log(JSON.stringify(pagbankResponse.data, null, 2));
+        console.log("--- [FIM LOG HOMOLOGAÇÃO CARTÃO] ---\n\n");
 
         const charge = pagbankResponse.data.charges[0];
 
@@ -154,7 +168,7 @@ router.post('/process-card', authMiddleware, async (req, res) => {
             const [updatedUser] = await prisma.$transaction([
                 prisma.user.update({
                     where: { id: userId },
-                    data: { pimentaBalance: { increment: selectedPackage.pimentaAmount } }, // Usando pimentaAmount
+                    data: { pimentaBalance: { increment: selectedPackage.pimentaAmount } },
                 }),
                 prisma.transaction.create({
                     data: {

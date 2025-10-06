@@ -29,14 +29,12 @@ const port = process.env.PORT || 3333;
 
 
 // === 4. CONFIGURAÇÃO DE MIDDLEWARES ===
-
-// --- CORS (Cross-Origin Resource Sharing) ---
 const allowedOrigins = [
-  'http://localhost:5173',                 // Endereço do Vite em modo de desenvolvimento
-  'http://localhost:3000',                 // Endereço do teste de build com 'serve'
-  process.env.FRONTEND_URL,                // URL de dev vinda do .env (se houver)
-  'https://myextasyclub.com',              // Domínio de produção
-  'https://www.myextasyclub.com'           // Domínio de produção com 'www'
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL,
+  'https://myextasyclub.com',
+  'https://www.myextasyclub.com'
 ];
 
 const corsOptions = {
@@ -51,25 +49,36 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// --- Outros Middlewares ---
-app.use(express.json()); // Para parsear JSON no corpo das requisições
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Para servir arquivos estáticos da pasta 'uploads'
+app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 
 // === 5. CONFIGURAÇÃO DAS ROTAS ===
 
-// Rotas públicas (não exigem login)
+// Rotas públicas
 app.use('/api', authRoutes);
 
-// Rotas protegidas (exigem login via authMiddleware)
-// CORREÇÃO DE SEGURANÇA: O 'authMiddleware' foi re-adicionado a todas as rotas que precisam de autenticação.
+
+// === 6. CONFIGURAÇÃO DO SERVIDOR HTTP E SOCKET.IO ===
+// PRIMEIRO CRIAMOS O SERVIDOR E O IO
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
+// AGORA USAMOS O 'IO' PARA CONFIGURAR AS ROTAS PROTEGIDAS
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
-app.use('/api/live', authMiddleware, updateLastSeen, liveRoutes);
+// CORREÇÃO APLICADA AQUI:
+app.use('/api/live', authMiddleware, updateLastSeen, liveRoutes(io));
 
-// Rota /me protegida individualmente
+// Rota /me
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     const fullUser = await prisma.user.findUnique({ where: { id: req.user.userId } });
@@ -82,22 +91,9 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   }
 });
 
-
-// === 6. CONFIGURAÇÃO DO SERVIDOR HTTP E SOCKET.IO ===
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins, // Reutiliza a mesma lista de permissões para o Socket.IO
-    methods: ["GET", "POST"],
-    credentials: true
-  }
-});
-
 io.on('connection', (socket) => {
   console.log(`🔌 Um usuário se conectou ao chat. ID: ${socket.id}`);
   
-  // Lógica do chat aqui...
-
   socket.on('disconnect', () => {
     console.log(`🔌 Um usuário se desconectou. ID: ${socket.id}`);
   });
