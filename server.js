@@ -30,9 +30,10 @@ const port = process.env.PORT || 3333;
 
 // === 4. CONFIGURAÇÃO DE MIDDLEWARES ===
 const allowedOrigins = [
-  'http://localhost:5173',
+  'http://localhost:5173',      // Para o comando 'npm run dev'
+  'http://localhost:4173',      // <<< ADICIONADO AQUI para o comando 'npm run preview'
   'http://localhost:3000',
-  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL,     // Para a Hostinger (ex: https://seu-dominio.com)
   'https://myextasyclub.com',
   'https://www.myextasyclub.com'
 ];
@@ -75,7 +76,6 @@ app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
-// CORREÇÃO APLICADA AQUI:
 app.use('/api/live', authMiddleware, updateLastSeen, liveRoutes(io));
 
 // Rota /me
