@@ -11,7 +11,7 @@ const prisma = new PrismaClient();
 // SOLUÇÃO TEMPORÁRIA: Colando a URL do ngrok diretamente aqui
 const NGROK_URL = "https://6495c71fff12.ngrok-free.app"; 
 
-const PAGBANK_API_URL = 'https://sandbox.api.pagseguro.com';
+const PAGBANK_API_URL = 'https://api.pagseguro.com'; // URL DE PRODUÇÃO
 const PAGBANK_TOKEN = process.env.PAGBANK_TOKEN;
 
 // ROTA 1: Listar pacotes
