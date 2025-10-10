@@ -1,8 +1,9 @@
-// backend/prisma/seed.js (O CÓDIGO CORRETO PARA ESTE ARQUIVO)
+// backend/prisma/seed.js
 
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+// Seus pacotes de pimentas
 const packagesData = [
   {
     id: 1,
@@ -24,13 +25,52 @@ const packagesData = [
   },
 ];
 
+// Nossos novos planos de assinatura
+const plansData = [
+    {
+      id: 'semanal',
+      name: 'Semanal',
+      priceInCents: 890, // R$ 8,90
+      durationInDays: 7,
+    },
+    {
+      id: 'mensal',
+      name: 'Mensal',
+      priceInCents: 2890, // R$ 28,90
+      durationInDays: 30,
+    },
+    {
+      id: 'anual',
+      name: 'Anual',
+      priceInCents: 29890, // R$ 298,90
+      durationInDays: 365,
+    },
+];
+
 async function main() {
   console.log('Iniciando o seeding...');
 
+  // --- Garantir Planos de Assinatura no Banco ---
+  console.log('Verificando planos de assinatura...');
+  for (const plan of plansData) {
+    await prisma.subscriptionPlan.upsert({
+      where: { id: plan.id },
+      update: {
+        name: plan.name,
+        priceInCents: plan.priceInCents,
+        durationInDays: plan.durationInDays
+      },
+      create: plan,
+    });
+    console.log(`Plano '${plan.name}' garantido no banco.`);
+  }
+  
+  // --- Garantir Pacotes de Pimentas no Banco ---
+  console.log('\nVerificando pacotes de pimentas...');
   for (const pkg of packagesData) {
     await prisma.pimentaPackage.upsert({
       where: { id: pkg.id },
-      update: { 
+      update: {
         name: pkg.name,
         pimentaAmount: pkg.pimentaAmount,
         priceInCents: pkg.priceInCents,
@@ -40,7 +80,7 @@ async function main() {
     console.log(`Pacote '${pkg.name}' garantido no banco com ${pkg.pimentaAmount} pimentas.`);
   }
   
-  console.log(`Seeding finalizado com sucesso!`);
+  console.log(`\nSeeding finalizado com sucesso!`);
 }
 
 main()
