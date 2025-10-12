@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma (VERSÃO COMPLETA E CORRIGIDA)
+// backend/prisma/schema.prisma (VERSÃO COM REGISTRO DE VISITAS)
 
 generator client {
   provider = "prisma-client-js"
@@ -26,7 +26,7 @@ model User {
   password             String
   bio                  String?    @db.Text
   profilePictureUrl    String?    @map("profile_picture_url") @db.VarChar(255)
-  coverPhotoUrl        String?    @map("cover_photo_url") @db.VarChar(255) // <-- O CAMPO IMPORTANTE ESTÁ AQUI
+  coverPhotoUrl        String?    @map("cover_photo_url") @db.VarChar(255)
   location             String?
   gender               String?
   createdAt            DateTime   @default(now()) @map("created_at")
@@ -49,6 +49,11 @@ model User {
   photos       Photo[]
   videos       Video[]
   transactions Transaction[]
+  
+  // --- ADIÇÃO PARA ESTATÍSTICAS ---
+  viewsReceived ProfileView[] @relation("viewsReceived")
+  viewsMade     ProfileView[] @relation("viewsMade")
+  // --------------------------------
 
   @@map("users")
 }
@@ -112,3 +117,18 @@ model Transaction {
 
   @@map("transactions")
 }
+
+// --- NOVO MODELO PARA ESTATÍSTICAS ---
+model ProfileView {
+  id              Int      @id @default(autoincrement())
+  viewedProfileId Int      @map("viewed_profile_id")
+  viewerId        Int?     @map("viewer_id") // Opcional, para visitas de não logados
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  // Relações
+  viewedProfile User @relation("viewsReceived", fields: [viewedProfileId], references: [id], onDelete: Cascade)
+  viewer        User? @relation("viewsMade", fields: [viewerId], references: [id], onDelete: SetNull)
+
+  @@map("profile_views")
+}
+// ------------------------------------

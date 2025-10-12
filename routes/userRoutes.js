@@ -1,4 +1,4 @@
-// backend/routes/userRoutes.js (VERSÃO 100% COMPLETA E CORRIGIDA)
+// backend/routes/userRoutes.js (VERSÃO 100% COMPLETA COM CONTAGEM DE VISITAS)
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -43,11 +43,24 @@ const uploadVideo = multer({ storage: createStorage('videos'), fileFilter: video
 // --- ROTAS DE PERFIL DO USUÁRIO ---
 // ==========================================================
 
-// Rota para o PRÓPRIO perfil do usuário logado
 router.get('/profile', authMiddleware, async (req, res) => {
   try {
+    const loggedInUserId = req.user.userId;
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const visitCount = await prisma.profileView.count({
+        where: {
+            viewedProfileId: loggedInUserId,
+            createdAt: {
+                gte: thirtyDaysAgo,
+            },
+        },
+    });
+
     const user = await prisma.user.findUnique({
-      where: { id: req.user.userId },
+      where: { id: loggedInUserId },
       select: {
         id: true, email: true, name: true, bio: true, location: true, gender: true,
         profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true,
@@ -55,55 +68,76 @@ router.get('/profile', authMiddleware, async (req, res) => {
       },
     });
     if (!user) { return res.status(404).json({ message: 'Usuário não encontrado.' }); }
+    
     let completionScore = 0;
     if (user.profilePictureUrl) completionScore += 25;
     if (user.bio) completionScore += 25;
     if (user.interests) completionScore += 25;
     if (user.location) completionScore += 25;
-    const monthlyStats = { visits: 0, commentsReceived: 0, commentsMade: 0 };
+
+    const monthlyStats = { 
+        visits: visitCount, 
+        commentsReceived: 0,
+        commentsMade: 0,
+    };
+
     const profileData = { ...user, certificationLevel: completionScore, monthlyStats: monthlyStats };
     res.json(profileData);
+
   } catch (error) {
     console.error("Erro ao buscar perfil do usuário:", error);
     res.status(500).json({ message: "Erro interno do servidor." });
   }
 });
 
-// NOVA ROTA PARA PERFIS PÚBLICOS
 router.get('/profile/:id', authMiddleware, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
         if (isNaN(userId)) {
             return res.status(400).json({ message: "ID de usuário inválido." });
         }
-
         const user = await prisma.user.findUnique({
             where: { id: userId },
-            // Selecionamos apenas os dados PÚBLICOS. Nunca retorne o email de outros usuários.
             select: {
-                id: true,
-                name: true,
-                bio: true,
-                location: true,
-                gender: true,
-                profilePictureUrl: true,
-                coverPhotoUrl: true,
-                createdAt: true,
-                interests: true,
-                desires: true,
-                fetishes: true,
+                id: true, name: true, bio: true, location: true, gender: true,
+                profilePictureUrl: true, coverPhotoUrl: true, createdAt: true,
+                interests: true, desires: true, fetishes: true,
             }
         });
-
-        if (!user) {
-            return res.status(404).json({ message: "Usuário não encontrado." });
-        }
-        
+        if (!user) { return res.status(404).json({ message: "Usuário não encontrado." }); }
         res.json(user);
-
     } catch (error) {
         console.error("Erro ao buscar perfil público:", error);
         res.status(500).json({ message: "Erro interno do servidor." });
+    }
+});
+
+router.post('/profile/:id/view', authMiddleware, async (req, res) => {
+    try {
+        const viewedProfileId = parseInt(req.params.id, 10);
+        const viewerId = req.user.userId;
+
+        if (viewedProfileId === viewerId) {
+            return res.status(200).json({ message: "Não é possível registrar visita no próprio perfil." });
+        }
+
+        const viewedProfile = await prisma.user.findUnique({ where: { id: viewedProfileId } });
+        if (!viewedProfile) {
+            return res.status(404).json({ message: "Perfil visitado não encontrado." });
+        }
+        
+        await prisma.profileView.create({
+            data: {
+                viewedProfileId: viewedProfileId,
+                viewerId: viewerId,
+            }
+        });
+        
+        res.status(201).json({ message: "Visita registrada com sucesso." });
+
+    } catch (error) {
+        console.error("Erro ao registrar visita:", error);
+        res.status(500).json({ message: "Erro interno do servidor ao registrar visita." });
     }
 });
 
@@ -126,7 +160,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
     }
 });
   
-router.put('/profile/avatar', authMiddleware, uploadAvatar.single('avatar'), async (req, res) => {
+router.put('/profile/avatar', authMiddleware, async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
         const filePath = req.file.path.replace(/\\/g, "/");
@@ -142,7 +176,7 @@ router.put('/profile/avatar', authMiddleware, uploadAvatar.single('avatar'), asy
     }
 });
 
-router.post('/profile/cover', authMiddleware, uploadCover.single('coverPhoto'), async (req, res) => {
+router.post('/profile/cover', authMiddleware, async (req, res) => {
     try {
         if (!req.file) { return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' }); }
         const filePath = req.file.path.replace(/\\/g, "/");
@@ -162,11 +196,6 @@ router.post('/profile/cover', authMiddleware, uploadCover.single('coverPhoto'), 
         res.status(500).json({ message: "Erro interno do servidor ao atualizar a foto de capa." });
     }
 });
-
-
-// ==========================================================
-// --- ROTAS DE GALERIA E BUSCA ---
-// ==========================================================
 
 router.get('/photos', authMiddleware, async (req, res) => {
     try {
