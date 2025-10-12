@@ -1,17 +1,14 @@
-// Arquivo: backend/server.js (ou index.js)
+// backend/server.js (VERSÃO FINAL COM CHAT FUNCIONAL)
 
-// === 1. CARREGA AS VARIÁVEIS DE AMBIENTE (.env) ===
 require('dotenv').config();
 
-// === 2. IMPORTAÇÕES ===
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const http = require('http');
 const { Server } = require("socket.io");
-const prisma = require('./lib/prisma'); // IMPORTA a instância única do Prisma
+const prisma = require('./lib/prisma');
 
-// Importações das Rotas
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const postRoutes = require('./routes/postRoutes');
@@ -19,25 +16,16 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const pimentaRoutes = require('./routes/pimentaRoutes');
 const liveRoutes = require('./routes/liveRoutes');
 
-// Importações dos Middlewares
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
 
-// === 3. INICIALIZAÇÃO ===
-// A linha 'const prisma = new PrismaClient()' foi REMOVIDA daqui
 const app = express();
 const port = process.env.PORT || 3333;
 
-// === 4. CONFIGURAÇÃO DE MIDDLEWARES ===
 const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:4173',
-  'http://localhost:3000',
-  process.env.FRONTEND_URL,
-  'https://myextasyclub.com',
-  'https://www.myextasyclub.com'
+  'http://localhost:5173', 'http://localhost:4173', 'http://localhost:3000',
+  process.env.FRONTEND_URL, 'https://myextasyclub.com', 'https://www.myextasyclub.com'
 ];
-
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -49,15 +37,11 @@ const corsOptions = {
   credentials: true
 };
 app.use(cors(corsOptions));
-
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// === 5. CONFIGURAÇÃO DAS ROTAS ===
-// Rotas públicas
 app.use('/api', authRoutes);
 
-// === 6. CONFIGURAÇÃO DO SERVIDOR HTTP E SOCKET.IO ===
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -67,14 +51,12 @@ const io = new Server(server, {
   }
 });
 
-// Rotas protegidas
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
 app.use('/api/live', authMiddleware, updateLastSeen, liveRoutes(io));
 
-// Rota /me
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     const fullUser = await prisma.user.findUnique({ where: { id: req.user.userId } });
@@ -87,15 +69,30 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   }
 });
 
+// ==========================================================
+//  AQUI ESTÁ A LÓGICA DO CHAT CORRIGIDA
+// ==========================================================
 io.on('connection', (socket) => {
   console.log(`🔌 Um usuário se conectou ao chat. ID: ${socket.id}`);
   
+  // 1. O usuário avisa em qual sala de live ele quer entrar
+  socket.on('join_room', (roomName) => {
+    socket.join(roomName);
+    console.log(`[Socket.IO] Usuário ${socket.id} entrou na sala: ${roomName}`);
+  });
+
+  // 2. Quando o servidor recebe uma 'chat message' de um usuário...
+  socket.on('chat message', (msg, roomName) => {
+    // 3. Ele retransmite a mensagem para TODOS OS OUTROS na mesma sala.
+    socket.to(roomName).emit('chat message', msg);
+    console.log(`[Socket.IO] Mensagem recebida na sala ${roomName} e retransmitida.`);
+  });
+
   socket.on('disconnect', () => {
     console.log(`🔌 Um usuário se desconectou. ID: ${socket.id}`);
   });
 });
 
-// === 7. INICIALIZAÇÃO DO SERVIDOR ===
 server.listen(port, () => {
   console.log(`✅ Servidor backend rodando na porta ${port}`);
   console.log('🚀 Servidor de Chat (Socket.IO) pronto para conexões.');
