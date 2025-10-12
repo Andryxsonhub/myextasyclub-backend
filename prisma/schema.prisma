@@ -1,4 +1,4 @@
-// backend/prisma/schema.prisma (VERSÃO FINAL COM @map CORRIGIDO)
+// backend/prisma/schema.prisma (VERSÃO COMPLETA E CORRIGIDA)
 
 generator client {
   provider = "prisma-client-js"
@@ -9,30 +9,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model SubscriptionPlan {
+  id             String @id
+  name           String
+  priceInCents   Int
+  durationInDays Int
+  users          User[]
+  @@map("subscription_plans")
+}
+
 model User {
-  id                Int       @id @default(autoincrement())
-  email             String    @unique
-  name              String    @unique
-  password          String
-  bio               String?   @db.Text
-  profilePictureUrl String?   @map("profile_picture_url") @db.VarChar(255)
-  location          String?
-  gender            String?
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime? @updatedAt @map("updated_at")
-  lastSeenAt        DateTime? @map("last_seen_at")
-  desires           String?   @db.LongText
-  fetishes          String?   @db.LongText
-  interests         String?   @db.LongText
-  profileType       String?   @map("profile_type")
-  favoritedSuggestions String? @db.LongText @map("favoritedsuggestions")
+  id                   Int        @id @default(autoincrement())
+  email                String     @unique
+  name                 String     @unique
+  username             String?    @unique
+  password             String
+  bio                  String?    @db.Text
+  profilePictureUrl    String?    @map("profile_picture_url") @db.VarChar(255)
+  coverPhotoUrl        String?    @map("cover_photo_url") @db.VarChar(255) // <-- O CAMPO IMPORTANTE ESTÁ AQUI
+  location             String?
+  gender               String?
+  createdAt            DateTime   @default(now()) @map("created_at")
+  updatedAt            DateTime?  @updatedAt @map("updated_at")
+  lastSeenAt           DateTime?  @map("last_seen_at")
+  desires              String?    @db.LongText
+  fetishes             String?    @db.LongText
+  interests            String?    @db.LongText
+  profileType          String?    @map("profile_type")
+  favoritedSuggestions String?    @db.LongText @map("favoritedsuggestions")
+  pimentaBalance       Int        @default(0) @map("pimenta_balance")
+  dateOfBirth          DateTime?  @map("date_of_birth") @db.Date
+  isLive               Boolean    @default(false)
 
-  
-  // A CORREÇÃO ESTÁ AQUI: ADICIONEI O @map("pimenta_balance") DE VOLTA
-  pimentaBalance    Int       @default(0) @map("pimenta_balance")
-
-  dateOfBirth       DateTime? @map("date_of_birth") @db.Date
-  isLive            Boolean   @default(false)
+  subscriptionPlanId    String?
+  subscriptionExpiresAt DateTime?  @map("subscription_expires_at")
+  subscriptionPlan      SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id])
 
   posts        Post[]
   photos       Photo[]
@@ -41,8 +52,6 @@ model User {
 
   @@map("users")
 }
-
-// ... O resto dos seus models (Post, PimentaPackage, Photo, etc.) continua igual ...
 
 model Post {
   id        Int      @id @default(autoincrement())
@@ -93,9 +102,9 @@ model Transaction {
   id              String   @id @default(cuid())
   userId          Int
   user            User     @relation(fields: [userId], references: [id])
-  packageId       String   @map("package_id")
-  packageName     String   @map("package_name")
-  pimentaAmount   Int      @map("pimenta_amount")
+  productId       String   @map("product_id")
+  productType     String   @map("product_type")
+  productName     String   @map("product_name")
   amountInCents   Int      @map("amount_in_cents")
   pagbankChargeId String?  @unique @map("pagbank_charge_id")
   status          String
