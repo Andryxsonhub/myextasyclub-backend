@@ -1,11 +1,9 @@
-// backend/routes/liveRoutes.js (VERSÃO ATUALIZADA)
-
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma'); // IMPORTA a instância única
 const authMiddleware = require('../middleware/authMiddleware');
 const { AccessToken } = require('livekit-server-sdk');
 
-const prisma = new PrismaClient();
+// A linha 'const prisma = new PrismaClient()' foi REMOVIDA daqui
 
 module.exports = (io) => {
     const router = express.Router();
@@ -16,11 +14,9 @@ module.exports = (io) => {
     const apiSecret = process.env.LIVEKIT_API_SECRET;
 
     // --- ROTA PARA GERAR O TOKEN DO LIVEKIT (MODIFICADA) ---
-    // ALTERAÇÃO 1: A rota agora recebe o nome da sala como parâmetro
     router.get('/token/:roomName', authMiddleware, async (req, res) => {
         console.log('\n--- [DEBUG LIVE] 1. Rota /token/:roomName foi chamada. ---');
         
-        // ALTERAÇÃO 2: Pegamos o nome da sala da URL em vez de criar um novo
         const { roomName } = req.params;
         const loggedInUser = req.user;
 
@@ -44,12 +40,10 @@ module.exports = (io) => {
         });
         console.log(`--- [DEBUG LIVE] 4. AccessToken criado. Adicionando permissões... ---`);
 
-        // ALTERAÇÃO 3: Lógica de permissão inteligente
         at.addGrant({ 
             room: roomName, 
             roomJoin: true, 
             canSubscribe: true,
-            // Só pode publicar (transmitir) se o nome da sala for igual ao seu ID de live ("live-SEUID")
             canPublish: roomName === `live-${loggedInUser.userId}`
         });
         console.log(`--- [DEBUG LIVE] 5. Permissões adicionadas. Gerando o token JWT... ---`);
@@ -73,7 +67,7 @@ module.exports = (io) => {
             const updatedUser = await prisma.user.update({
                 where: { id: userId },
                 data: { isLive: true },
-                select: { id: true, name: true, profilePictureUrl: true, username: true } // Adicionei username para usar nos links
+                select: { id: true, name: true, profilePictureUrl: true, username: true }
             });
 
             io.emit('live_started', updatedUser);
@@ -110,7 +104,7 @@ module.exports = (io) => {
         try {
             const liveUsers = await prisma.user.findMany({
                 where: { isLive: true },
-                select: { id: true, name: true, profilePictureUrl: true, username: true } // Adicionei username para usar nos links
+                select: { id: true, name: true, profilePictureUrl: true, username: true }
             });
             res.status(200).json(liveUsers);
         } catch (error) {

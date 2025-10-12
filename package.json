@@ -18,7 +18,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@prisma/client": "^6.16.2",
+    "@prisma/client": "^6.17.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
@@ -32,10 +32,11 @@
     "mysql2": "^3.14.5",
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
+    "querystring": "^0.2.1",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",
-    "prisma": "^6.16.2"
+    "prisma": "^6.17.0"
   }
 }

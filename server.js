@@ -1,3 +1,5 @@
+// Arquivo: backend/server.js (ou index.js)
+
 // === 1. CARREGA AS VARIÁVEIS DE AMBIENTE (.env) ===
 require('dotenv').config();
 
@@ -7,7 +9,7 @@ const cors = require('cors');
 const path = require('path');
 const http = require('http');
 const { Server } = require("socket.io");
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('./lib/prisma'); // IMPORTA a instância única do Prisma
 
 // Importações das Rotas
 const userRoutes = require('./routes/userRoutes');
@@ -21,19 +23,17 @@ const liveRoutes = require('./routes/liveRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
 
-
 // === 3. INICIALIZAÇÃO ===
-const prisma = new PrismaClient();
+// A linha 'const prisma = new PrismaClient()' foi REMOVIDA daqui
 const app = express();
 const port = process.env.PORT || 3333;
 
-
 // === 4. CONFIGURAÇÃO DE MIDDLEWARES ===
 const allowedOrigins = [
-  'http://localhost:5173',      // Para o comando 'npm run dev'
-  'http://localhost:4173',      // <<< ADICIONADO AQUI para o comando 'npm run preview'
+  'http://localhost:5173',
+  'http://localhost:4173',
   'http://localhost:3000',
-  process.env.FRONTEND_URL,     // Para a Hostinger (ex: https://seu-dominio.com)
+  process.env.FRONTEND_URL,
   'https://myextasyclub.com',
   'https://www.myextasyclub.com'
 ];
@@ -53,15 +53,11 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-
 // === 5. CONFIGURAÇÃO DAS ROTAS ===
-
 // Rotas públicas
 app.use('/api', authRoutes);
 
-
 // === 6. CONFIGURAÇÃO DO SERVIDOR HTTP E SOCKET.IO ===
-// PRIMEIRO CRIAMOS O SERVIDOR E O IO
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -71,7 +67,7 @@ const io = new Server(server, {
   }
 });
 
-// AGORA USAMOS O 'IO' PARA CONFIGURAR AS ROTAS PROTEGIDAS
+// Rotas protegidas
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
@@ -98,7 +94,6 @@ io.on('connection', (socket) => {
     console.log(`🔌 Um usuário se desconectou. ID: ${socket.id}`);
   });
 });
-
 
 // === 7. INICIALIZAÇÃO DO SERVIDOR ===
 server.listen(port, () => {

@@ -1,10 +1,8 @@
-// myextasyclub-backend/routes/postRoutes.js (VERSÃO COMPLETA E ATUALIZADA)
-
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma'); // IMPORTA a instância única
 const authMiddleware = require('../middleware/authMiddleware');
 
-const prisma = new PrismaClient();
+// As linhas 'PrismaClient' e 'new PrismaClient()' foram REMOVIDAS daqui
 const router = express.Router();
 
 // ROTA PARA CRIAR UMA NOVA PUBLICAÇÃO (POST DE TEXTO)
@@ -107,7 +105,8 @@ router.get('/feed', authMiddleware, async (req, res) => {
 
     // 5. Juntar os dois arrays e ordenar pela data de criação
     const combinedFeed = [...formattedPhotos, ...formattedVideos];
-    combinedFeed.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    combinedFeed.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
 
     // 6. Enviar a resposta final (limitada aos 40 itens mais recentes)
     res.status(200).json(combinedFeed.slice(0, 40));

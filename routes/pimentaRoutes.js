@@ -1,9 +1,8 @@
-// routes/pimentaRoutes.js
-
 const express = require('express');
 const router = express.Router();
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma'); // IMPORTA a instância única
+
+// As linhas 'PrismaClient' e 'new PrismaClient()' foram REMOVIDAS daqui
 
 // Rota para buscar todos os pacotes de pimentas
 // GET /api/pimentas/packages
