@@ -1,4 +1,4 @@
-// backend/routes/userRoutes.js (VERSÃO 100% COMPLETA COM CONTAGEM DE VISITAS)
+// backend/routes/userRoutes.js (VERSÃO 100% COMPLETA COM ROTA /online)
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -53,9 +53,7 @@ router.get('/profile', authMiddleware, async (req, res) => {
     const visitCount = await prisma.profileView.count({
         where: {
             viewedProfileId: loggedInUserId,
-            createdAt: {
-                gte: thirtyDaysAgo,
-            },
+            createdAt: { gte: thirtyDaysAgo },
         },
     });
 
@@ -93,9 +91,7 @@ router.get('/profile', authMiddleware, async (req, res) => {
 router.get('/profile/:id', authMiddleware, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
-        if (isNaN(userId)) {
-            return res.status(400).json({ message: "ID de usuário inválido." });
-        }
+        if (isNaN(userId)) { return res.status(400).json({ message: "ID de usuário inválido." }); }
         const user = await prisma.user.findUnique({
             where: { id: userId },
             select: {
@@ -138,6 +134,39 @@ router.post('/profile/:id/view', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error("Erro ao registrar visita:", error);
         res.status(500).json({ message: "Erro interno do servidor ao registrar visita." });
+    }
+});
+
+router.get('/online', authMiddleware, async (req, res) => {
+    try {
+        const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+        const onlineUsers = await prisma.user.findMany({
+            where: {
+                lastSeenAt: {
+                    gte: fifteenMinutesAgo,
+                },
+                id: {
+                    not: req.user.userId,
+                }
+            },
+            select: {
+                id: true,
+                name: true,
+                profilePictureUrl: true,
+                gender: true,
+            },
+            orderBy: {
+                lastSeenAt: 'desc',
+            },
+            take: 10,
+        });
+        
+        res.json(onlineUsers);
+
+    } catch (error) {
+        console.error("Erro ao buscar usuários online:", error);
+        res.status(500).json({ message: "Erro interno do servidor." });
     }
 });
 
