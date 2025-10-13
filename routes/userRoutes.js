@@ -1,4 +1,4 @@
-// backend/routes/userRoutes.js (VERSÃO 100% COMPLETA COM ROTA /online)
+// backend/routes/userRoutes.js (VERSÃO CORRIGIDA)
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -189,7 +189,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
     }
 });
   
-router.put('/profile/avatar', authMiddleware, async (req, res) => {
+router.put('/profile/avatar', authMiddleware, uploadAvatar.single('avatar'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
         const filePath = req.file.path.replace(/\\/g, "/");
@@ -205,7 +205,7 @@ router.put('/profile/avatar', authMiddleware, async (req, res) => {
     }
 });
 
-router.post('/profile/cover', authMiddleware, async (req, res) => {
+router.post('/profile/cover', authMiddleware, uploadCover.single('cover'), async (req, res) => {
     try {
         if (!req.file) { return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' }); }
         const filePath = req.file.path.replace(/\\/g, "/");
@@ -236,7 +236,8 @@ router.get('/photos', authMiddleware, async (req, res) => {
     }
 });
 
-router.post('/photos', authMiddleware, uploadFoto.single('photo'), async (req, res) => {
+// A ROTA PROBLEMÁTICA ESTAVA AQUI
+router.post('/photos', authMiddleware, uploadPhoto.single('photo'), async (req, res) => { // <-- CORREÇÃO AQUI: uploadFoto -> uploadPhoto
   try {
     const { description } = req.body;
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
