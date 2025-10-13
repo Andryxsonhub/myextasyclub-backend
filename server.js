@@ -15,6 +15,7 @@ const postRoutes = require('./routes/postRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const pimentaRoutes = require('./routes/pimentaRoutes');
 const liveRoutes = require('./routes/liveRoutes');
+const productRoutes = require('./routes/productRoutes'); // <-- ADICIONADO AQUI
 
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
@@ -41,6 +42,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api', authRoutes);
+app.use('/api/products', productRoutes); // <-- ADICIONADO AQUI
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -55,7 +57,6 @@ app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
-app.use('/api/live', authMiddleware, updateLastSeen, liveRoutes(io));
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {

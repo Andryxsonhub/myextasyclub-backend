@@ -28,7 +28,11 @@ router.get('/packages', authMiddleware, async (req, res) => {
   }
 });
 
-// ROTA 2: Criar ordem PIX
+
+// ===================================================================================
+// ROTAS ANTIGAS (ESPECÍFICAS PARA PIMENTAS) - MANTIDAS PARA COMPATIBILIDADE
+// ⚠️ ATENÇÃO: ESTAS ROTAS VÃO DAR ERRO SE CHAMADAS, POIS O ARQUIVO 'pagbankService.js' MUDOU.
+// ===================================================================================
 router.post('/create-pix-order', authMiddleware, async (req, res) => {
   const { packageId } = req.body;
   const userId = req.user.userId;
@@ -137,6 +141,7 @@ router.post('/process-card-v2', authMiddleware, async (req, res) => {
         } else {
              return res.status(400).json({ message: `Pagamento não aprovado. Status: ${status}` });
         }
+        res.status(200).send('Webhook recebido com sucesso.');
     } catch (error) {
         console.error("Erro na transação Direct Payment:", error.response?.data?.errors || error.message);
         return res.status(500).json({ message: 'Erro ao processar pagamento.' });

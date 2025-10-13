@@ -236,7 +236,7 @@ router.get('/photos', authMiddleware, async (req, res) => {
     }
 });
 
-router.post('/photos', authMiddleware, uploadPhoto.single('photo'), async (req, res) => {
+router.post('/photos', authMiddleware, uploadFoto.single('photo'), async (req, res) => {
   try {
     const { description } = req.body;
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
