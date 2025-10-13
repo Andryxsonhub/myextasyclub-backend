@@ -57,6 +57,7 @@ app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
+app.use('/api/lives', authMiddleware, updateLastSeen, liveRoutes(io));
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
