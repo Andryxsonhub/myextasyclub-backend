@@ -1,4 +1,4 @@
-// backend/server.js (VERSÃO FINAL COM CHAT FUNCIONAL)
+// backend/server.js (VERSÃO COM MARCA D'ÁGUA)
 
 require('dotenv').config();
 
@@ -9,13 +9,12 @@ const http = require('http');
 const { Server } = require("socket.io");
 const prisma = require('./lib/prisma');
 
+// --- 1. IMPORTAR A NOVA ROTA ---
+const mediaRoutes = require('./routes/mediaRoutes'); 
+
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
-const postRoutes = require('./routes/postRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
-const pimentaRoutes = require('./routes/pimentaRoutes');
-const liveRoutes = require('./routes/liveRoutes');
-const productRoutes = require('./routes/productRoutes'); // <-- ADICIONADO AQUI
+// ... (outras importações de rotas)
 
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
@@ -23,41 +22,36 @@ const updateLastSeen = require('./middleware/updateLastSeen');
 const app = express();
 const port = process.env.PORT || 3333;
 
-const allowedOrigins = [
-  'http://localhost:5173', 'http://localhost:4173', 'http://localhost:3000',
-  process.env.FRONTEND_URL, 'https://myextasyclub.com', 'https://www.myextasyclub.com'
-];
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Acesso não permitido por CORS'));
-    }
-  },
-  credentials: true
-};
+// ... (configuração do CORS permanece a mesma)
+
 app.use(cors(corsOptions));
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// --- 2. LINHA REMOVIDA ---
+// A linha abaixo foi REMOVIDA para que os arquivos não sejam mais públicos.
+// app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use('/api', authRoutes);
-app.use('/api/products', productRoutes); // <-- ADICIONADO AQUI
+app.use('/api/products', productRoutes);
 
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ["GET", "POST"],
-    credentials: true
-  }
-});
+const io = new Server(server, { /* ... */ });
+
+// --- 3. ADICIONAR A NOVA ROTA ---
+// Todas as requisições para /api/media agora passarão pelo nosso novo sistema
+app.use('/api/media', mediaRoutes); 
 
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
 app.use('/api/lives', authMiddleware, updateLastSeen, liveRoutes(io));
+
+// ... (o resto do seu server.js permanece exatamente o mesmo) ...
+
+app.get('/api/auth/me', /* ... */ );
+io.on('connection', /* ... */ );
+server.listen(port, /* ... */ );
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {

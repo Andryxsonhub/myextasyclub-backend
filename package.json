@@ -13,11 +13,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-
   "prisma": {
     "seed": "node prisma/seed.js"
   },
-
   "dependencies": {
     "@prisma/client": "^6.17.0",
     "axios": "^1.12.2",
@@ -34,6 +32,7 @@
     "passport": "^0.7.0",
     "passport-github2": "^0.1.12",
     "querystring": "^0.2.1",
+    "sharp": "^0.34.4",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
