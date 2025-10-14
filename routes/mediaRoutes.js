@@ -9,7 +9,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 
 // Nova rota segura para servir imagens com marca d'água
 // Ex: GET /api/media/photos/nome-do-arquivo.jpg
-router.get('/:folder/:filename', authMiddleware, async (req, res) => {
+router.get('/:folder/:filename(*)', authMiddleware, async (req, res) => {
   try {
     const { folder, filename } = req.params;
     const loggedInUser = req.user; // Obtido pelo authMiddleware
