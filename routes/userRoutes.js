@@ -1,26 +1,24 @@
-// backend/routes/userRoutes.js (VERSÃO COMPLETA E FINAL COM AWS S3)
+// backend/routes/userRoutes.js (VERSÃO COMPLETA DE DEPURAÇÃO PARA S3)
 
 const express = require('express');
 const prisma = require('../lib/prisma');
 const authMiddleware = require('../middleware/authMiddleware');
 const path = require('path');
 
-// --- 1. NOVAS IMPORTAÇÕES PARA A AWS ---
+// --- Importações para a AWS ---
 const multer = require('multer');
 const AWS = require('aws-sdk');
 const multerS3 = require('multer-s3');
 
 const router = express.Router();
 
-// --- 2. CONFIGURAÇÃO DA CONEXÃO COM A AWS S3 ---
-// O SDK da AWS lê as credenciais automaticamente do seu arquivo .env
+// --- Configuração da Conexão com a AWS S3 ---
 const s3 = new AWS.S3({
   accessKeyId: process.env.AWS_ACCESS_KEY_ID,
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   region: process.env.AWS_REGION,
 });
 
-// Uma verificação de segurança para garantir que as variáveis de ambiente foram carregadas
 if (!process.env.AWS_BUCKET_NAME) {
   console.error("\n!!! ERRO CRÍTICO !!!");
   console.error("As variáveis de ambiente da AWS S3 (AWS_BUCKET_NAME, etc.) não foram encontradas.");
@@ -28,25 +26,21 @@ if (!process.env.AWS_BUCKET_NAME) {
   console.error("Verifique seu arquivo .env e reinicie o servidor.\n");
 }
 
-// --- 3. FUNÇÃO DE UPLOAD PARA A S3 (SUBSTITUI A ANTIGA) ---
-// Esta função cria um "motor" de armazenamento que aponta para a S3
+// --- Função de Upload para a S3 ---
 const createS3Storage = (folder) => multerS3({
   s3: s3,
   bucket: process.env.AWS_BUCKET_NAME,
-  acl: 'public-read', // Permite que os arquivos enviados possam ser visualizados publicamente no navegador
-  contentType: multerS3.AUTO_CONTENT_TYPE, // O multer-s3 detecta o tipo do arquivo (imagem, vídeo) automaticamente
+  acl: 'public-read',
+  contentType: multerS3.AUTO_CONTENT_TYPE,
   key: function (req, file, cb) {
-    // Esta função define o nome e a pasta do arquivo dentro do seu bucket na S3
     const userId = req.user.userId;
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = `${folder.slice(0, -1)}-${userId}-${uniqueSuffix}${path.extname(file.originalname)}`;
-    
-    // O caminho final do arquivo no bucket será, por exemplo: 'photos/photo-1-12345.jpg'
     cb(null, `${folder}/${filename}`);
   }
 });
 
-// Funções de filtro (não mudam)
+// Funções de filtro
 const imageFileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) { cb(null, true); }
   else { cb(new Error('Formato de arquivo não suportado.'), false); }
@@ -56,8 +50,7 @@ const videoFileFilter = (req, file, cb) => {
     else { cb(new Error('Formato de arquivo não suportado.'), false); }
 };
 
-// --- 4. NOVAS INSTÂNCIAS DO MULTER USANDO A S3 ---
-// A estrutura é a mesma, mas agora o 'storage' aponta para a nuvem
+// Instâncias do Multer usando a S3
 const uploadAvatar = multer({ storage: createS3Storage('avatars'), fileFilter: imageFileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadCover = multer({ storage: createS3Storage('covers'), fileFilter: imageFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 const uploadPhoto = multer({ storage: createS3Storage('photos'), fileFilter: imageFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
@@ -68,7 +61,6 @@ const uploadVideo = multer({ storage: createS3Storage('videos'), fileFilter: vid
 // --- ROTAS DO USUÁRIO ---
 // ==========================================================
 
-// As rotas que não fazem upload permanecem exatamente as mesmas
 router.get('/profile', authMiddleware, async (req, res) => {
   try {
     const loggedInUserId = req.user.userId;
@@ -216,16 +208,10 @@ router.get('/search', authMiddleware, async (req, res) => {
     }
 });
 
-// --- 5. LÓGICA DAS ROTAS DE UPLOAD ATUALIZADA ---
-// A única mudança aqui é de onde pegamos a URL do arquivo.
- 
 router.put('/profile/avatar', authMiddleware, uploadAvatar.single('avatar'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
-        
-        // MUDANÇA: Em vez de 'req.file.path', multer-s3 nos dá 'req.file.location' com a URL completa da nuvem.
         const avatarUrl = req.file.location;
-
         const updatedUser = await prisma.user.update({
             where: { id: req.user.userId }, 
             data: { profilePictureUrl: avatarUrl },
@@ -241,10 +227,7 @@ router.put('/profile/avatar', authMiddleware, uploadAvatar.single('avatar'), asy
 router.post('/profile/cover', authMiddleware, uploadCover.single('cover'), async (req, res) => {
     try {
         if (!req.file) { return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' }); }
-        
-        // MUDANÇA: Pegamos a URL direto de 'req.file.location'
         const coverUrl = req.file.location;
-
         const updatedUser = await prisma.user.update({
             where: { id: req.user.userId },
             data: { coverPhotoUrl: coverUrl },
@@ -271,12 +254,17 @@ router.get('/photos', authMiddleware, async (req, res) => {
     }
 });
 
+// A ROTA DE UPLOAD DE FOTOS COM O "ESPIÃO"
 router.post('/photos', authMiddleware, uploadPhoto.single('photo'), async (req, res) => {
   try {
+    // ==========================================================
+    // --- NOSSO "ESPIÃO" ESTÁ AQUI ---
+    console.log("Objeto 'file' recebido do multer-s3:", req.file); 
+    // ==========================================================
+
     const { description } = req.body;
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
     
-    // MUDANÇA: Pegamos a URL direto de 'req.file.location'
     const photoUrl = req.file.location;
 
     const newPhoto = await prisma.photo.create({ data: { url: photoUrl, description: description, authorId: req.user.userId, } });
@@ -301,8 +289,7 @@ router.post('/videos', authMiddleware, uploadVideo.single('video'), async (req, 
   try {
     const { description } = req.body;
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
-
-    // MUDANÇA: Pegamos a URL direto de 'req.file.location'
+    
     const videoUrl = req.file.location;
     
     const newVideo = await prisma.video.create({ data: { url: videoUrl, description: description, authorId: req.user.userId } });
