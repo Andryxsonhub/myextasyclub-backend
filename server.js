@@ -1,4 +1,4 @@
-// backend/server.js (VERSÃO COM MARCA D'ÁGUA)
+// backend/server.js (VERSÃO FINAL E COMPLETA EM PORTUGUÊS)
 
 require('dotenv').config();
 
@@ -9,49 +9,66 @@ const http = require('http');
 const { Server } = require("socket.io");
 const prisma = require('./lib/prisma');
 
-// --- 1. IMPORTAR A NOVA ROTA ---
-const mediaRoutes = require('./routes/mediaRoutes'); 
-
+// Importações de rotas
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
-// ... (outras importações de rotas)
+const postRoutes = require('./routes/postRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const pimentaRoutes = require('./routes/pimentaRoutes');
+const liveRoutes = require('./routes/liveRoutes');
+const productRoutes = require('./routes/productRoutes');
+const mediaRoutes = require('./routes/mediaRoutes'); // Rota da marca d'água
 
+// Middlewares
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
 
 const app = express();
 const port = process.env.PORT || 3333;
 
-// ... (configuração do CORS permanece a mesma)
+// ==========================================================
+// O BLOCO DE CÓDIGO QUE FALTAVA ESTÁ AQUI
+// ==========================================================
+const allowedOrigins = [
+  'http://localhost:5173', 'http://localhost:4173', 'http://localhost:3000',
+  process.env.FRONTEND_URL, 'https://myextasyclub.com', 'https://www.myextasyclub.com'
+];
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Acesso não permitido por CORS'));
+    }
+  },
+  credentials: true
+};
+// ==========================================================
 
 app.use(cors(corsOptions));
 app.use(express.json());
+// A linha para servir a pasta 'uploads' publicamente foi removida intencionalmente.
 
-// --- 2. LINHA REMOVIDA ---
-// A linha abaixo foi REMOVIDA para que os arquivos não sejam mais públicos.
-// app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
+// Configuração das rotas da API
 app.use('/api', authRoutes);
 app.use('/api/products', productRoutes);
 
 const server = http.createServer(app);
-const io = new Server(server, { /* ... */ });
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins,
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
 
-// --- 3. ADICIONAR A NOVA ROTA ---
-// Todas as requisições para /api/media agora passarão pelo nosso novo sistema
-app.use('/api/media', mediaRoutes); 
-
+// Rotas protegidas e com middleware
+app.use('/api/media', mediaRoutes); // Rota segura para mídias
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
 app.use('/api/lives', authMiddleware, updateLastSeen, liveRoutes(io));
-
-// ... (o resto do seu server.js permanece exatamente o mesmo) ...
-
-app.get('/api/auth/me', /* ... */ );
-io.on('connection', /* ... */ );
-server.listen(port, /* ... */ );
 
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
@@ -65,21 +82,16 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   }
 });
 
-// ==========================================================
-//  AQUI ESTÁ A LÓGICA DO CHAT CORRIGIDA
-// ==========================================================
+// Lógica do Socket.IO (Chat)
 io.on('connection', (socket) => {
   console.log(`🔌 Um usuário se conectou ao chat. ID: ${socket.id}`);
   
-  // 1. O usuário avisa em qual sala de live ele quer entrar
   socket.on('join_room', (roomName) => {
     socket.join(roomName);
     console.log(`[Socket.IO] Usuário ${socket.id} entrou na sala: ${roomName}`);
   });
 
-  // 2. Quando o servidor recebe uma 'chat message' de um usuário...
   socket.on('chat message', (msg, roomName) => {
-    // 3. Ele retransmite a mensagem para TODOS OS OUTROS na mesma sala.
     socket.to(roomName).emit('chat message', msg);
     console.log(`[Socket.IO] Mensagem recebida na sala ${roomName} e retransmitida.`);
   });
@@ -89,6 +101,7 @@ io.on('connection', (socket) => {
   });
 });
 
+// Inicia o servidor
 server.listen(port, () => {
   console.log(`✅ Servidor backend rodando na porta ${port}`);
   console.log('🚀 Servidor de Chat (Socket.IO) pronto para conexões.');
