@@ -1,4 +1,4 @@
-// backend/server.js (VERSÃO FINAL E COMPLETA EM PORTUGUÊS)
+// backend/server.js (VERSÃO FINAL E CORRETA)
 
 require('dotenv').config();
 
@@ -26,9 +26,6 @@ const updateLastSeen = require('./middleware/updateLastSeen');
 const app = express();
 const port = process.env.PORT || 3333;
 
-// ==========================================================
-// O BLOCO DE CÓDIGO QUE FALTAVA ESTÁ AQUI
-// ==========================================================
 const allowedOrigins = [
   'http://localhost:5173', 'http://localhost:4173', 'http://localhost:3000',
   process.env.FRONTEND_URL, 'https://myextasyclub.com', 'https://www.myextasyclub.com'
@@ -43,11 +40,9 @@ const corsOptions = {
   },
   credentials: true
 };
-// ==========================================================
 
 app.use(cors(corsOptions));
 app.use(express.json());
-// A linha para servir a pasta 'uploads' publicamente foi removida intencionalmente.
 
 // Configuração das rotas da API
 app.use('/api', authRoutes);
@@ -63,7 +58,7 @@ const io = new Server(server, {
 });
 
 // Rotas protegidas e com middleware
-app.use('/api/media', mediaRoutes); // Rota segura para mídias
+app.use('/api/media', mediaRoutes); // A LINHA QUE FALTAVA
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
@@ -85,20 +80,9 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 // Lógica do Socket.IO (Chat)
 io.on('connection', (socket) => {
   console.log(`🔌 Um usuário se conectou ao chat. ID: ${socket.id}`);
-  
-  socket.on('join_room', (roomName) => {
-    socket.join(roomName);
-    console.log(`[Socket.IO] Usuário ${socket.id} entrou na sala: ${roomName}`);
-  });
-
-  socket.on('chat message', (msg, roomName) => {
-    socket.to(roomName).emit('chat message', msg);
-    console.log(`[Socket.IO] Mensagem recebida na sala ${roomName} e retransmitida.`);
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`🔌 Um usuário se desconectou. ID: ${socket.id}`);
-  });
+  socket.on('join_room', (roomName) => { socket.join(roomName); });
+  socket.on('chat message', (msg, roomName) => { socket.to(roomName).emit('chat message', msg); });
+  socket.on('disconnect', () => { console.log(`🔌 Um usuário se desconectou. ID: ${socket.id}`); });
 });
 
 // Inicia o servidor
