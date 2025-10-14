@@ -1,37 +1,38 @@
-// backend/routes/userRoutes.js (VERSÃO COMPLETA DE DEPURAÇÃO PARA S3)
+// backend/routes/userRoutes.js (VERSÃO COMPLETA E FINAL COM AWS SDK v3)
 
 const express = require('express');
 const prisma = require('../lib/prisma');
 const authMiddleware = require('../middleware/authMiddleware');
 const path = require('path');
-
-// --- Importações para a AWS ---
 const multer = require('multer');
-const AWS = require('aws-sdk');
 const multerS3 = require('multer-s3');
+
+// --- 1. NOVAS IMPORTAÇÕES PARA A AWS SDK v3 ---
+const { S3Client } = require('@aws-sdk/client-s3');
 
 const router = express.Router();
 
-// --- Configuração da Conexão com a AWS S3 ---
-const s3 = new AWS.S3({
-  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+// --- 2. NOVA CONFIGURAÇÃO DA CONEXÃO COM A S3 (usando a v3) ---
+// A sintaxe para criar o cliente é um pouco diferente na v3
+const s3Client = new S3Client({
   region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  }
 });
 
+// Verificação de segurança para garantir que as variáveis de ambiente foram carregadas
 if (!process.env.AWS_BUCKET_NAME) {
-  console.error("\n!!! ERRO CRÍTICO !!!");
-  console.error("As variáveis de ambiente da AWS S3 (AWS_BUCKET_NAME, etc.) não foram encontradas.");
-  console.error("O sistema de upload de arquivos NÃO VAI FUNCIONAR.");
-  console.error("Verifique seu arquivo .env e reinicie o servidor.\n");
+  console.error("\n!!! ERRO CRÍTICO !!! As variáveis da AWS S3 não foram encontradas. Verifique as configurações no Render.\n");
 }
 
-// --- Função de Upload para a S3 ---
+// --- 3. FUNÇÃO DE UPLOAD PARA A S3 (agora usando o novo cliente v3) ---
 const createS3Storage = (folder) => multerS3({
-  s3: s3,
+  s3: s3Client, // Passamos o novo cliente v3 aqui
   bucket: process.env.AWS_BUCKET_NAME,
-  acl: 'public-read',
-  contentType: multerS3.AUTO_CONTENT_TYPE,
+  acl: 'public-read', // Permite que os arquivos sejam visualizados publicamente
+  contentType: multerS3.AUTO_CONTENT_TYPE, // Detecta o tipo do arquivo automaticamente
   key: function (req, file, cb) {
     const userId = req.user.userId;
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -40,7 +41,7 @@ const createS3Storage = (folder) => multerS3({
   }
 });
 
-// Funções de filtro
+// Funções de filtro (não mudam)
 const imageFileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) { cb(null, true); }
   else { cb(new Error('Formato de arquivo não suportado.'), false); }
@@ -50,7 +51,7 @@ const videoFileFilter = (req, file, cb) => {
     else { cb(new Error('Formato de arquivo não suportado.'), false); }
 };
 
-// Instâncias do Multer usando a S3
+// Instâncias do Multer usando o novo armazenamento da S3 (não mudam)
 const uploadAvatar = multer({ storage: createS3Storage('avatars'), fileFilter: imageFileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadCover = multer({ storage: createS3Storage('covers'), fileFilter: imageFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 const uploadPhoto = multer({ storage: createS3Storage('photos'), fileFilter: imageFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
@@ -58,7 +59,7 @@ const uploadVideo = multer({ storage: createS3Storage('videos'), fileFilter: vid
 
 
 // ==========================================================
-// --- ROTAS DO USUÁRIO ---
+// --- TODAS AS SUAS ROTAS (SEM ALTERAÇÕES, EXCETO UPLOAD) ---
 // ==========================================================
 
 router.get('/profile', authMiddleware, async (req, res) => {
@@ -66,12 +67,7 @@ router.get('/profile', authMiddleware, async (req, res) => {
     const loggedInUserId = req.user.userId;
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const visitCount = await prisma.profileView.count({
-        where: {
-            viewedProfileId: loggedInUserId,
-            createdAt: { gte: thirtyDaysAgo },
-        },
-    });
+    const visitCount = await prisma.profileView.count({ where: { viewedProfileId: loggedInUserId, createdAt: { gte: thirtyDaysAgo } } });
     const user = await prisma.user.findUnique({
       where: { id: loggedInUserId },
       select: {
@@ -86,11 +82,7 @@ router.get('/profile', authMiddleware, async (req, res) => {
     if (user.bio) completionScore += 25;
     if (user.interests) completionScore += 25;
     if (user.location) completionScore += 25;
-    const monthlyStats = { 
-        visits: visitCount, 
-        commentsReceived: 0,
-        commentsMade: 0,
-    };
+    const monthlyStats = { visits: visitCount, commentsReceived: 0, commentsMade: 0 };
     const profileData = { ...user, certificationLevel: completionScore, monthlyStats: monthlyStats };
     res.json(profileData);
   } catch (error) {
@@ -207,7 +199,7 @@ router.get('/search', authMiddleware, async (req, res) => {
       res.status(500).json({ message: "Erro interno do servidor ao realizar a busca." });
     }
 });
-
+ 
 router.put('/profile/avatar', authMiddleware, uploadAvatar.single('avatar'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
@@ -254,19 +246,11 @@ router.get('/photos', authMiddleware, async (req, res) => {
     }
 });
 
-// A ROTA DE UPLOAD DE FOTOS COM O "ESPIÃO"
 router.post('/photos', authMiddleware, uploadPhoto.single('photo'), async (req, res) => {
   try {
-    // ==========================================================
-    // --- NOSSO "ESPIÃO" ESTÁ AQUI ---
-    console.log("Objeto 'file' recebido do multer-s3:", req.file); 
-    // ==========================================================
-
-    const { description } = req.body;
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
-    
+    const { description } = req.body;
     const photoUrl = req.file.location;
-
     const newPhoto = await prisma.photo.create({ data: { url: photoUrl, description: description, authorId: req.user.userId, } });
     res.status(201).json(newPhoto);
   } catch (error) {
@@ -287,11 +271,9 @@ router.get('/videos', authMiddleware, async (req, res) => {
 
 router.post('/videos', authMiddleware, uploadVideo.single('video'), async (req, res) => {
   try {
-    const { description } = req.body;
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
-    
+    const { description } = req.body;
     const videoUrl = req.file.location;
-    
     const newVideo = await prisma.video.create({ data: { url: videoUrl, description: description, authorId: req.user.userId } });
     res.status(201).json(newVideo);
   } catch (error) {
