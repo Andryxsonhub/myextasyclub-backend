@@ -1,4 +1,4 @@
-// routes/mediaRoutes.js (ARQUIVO NOVO)
+// routes/mediaRoutes.js (VERSÃO FINAL COM CURINGA *)
 
 const express = require('express');
 const router = express.Router();
@@ -7,26 +7,29 @@ const path = require('path');
 const fs = require('fs');
 const authMiddleware = require('../middleware/authMiddleware');
 
-// Nova rota segura para servir imagens com marca d'água
-// Ex: GET /api/media/photos/nome-do-arquivo.jpg
-router.get('/:folder/:filename(.+)', authMiddleware, async (req, res) => { // <-- CORREÇÃO AQUI
+// A CORREÇÃO ESTÁ AQUI -> /:folder/*
+// O Express irá capturar a pasta no parâmetro 'folder'
+// e TUDO o que vier depois do '*' será colocado em 'req.params[0]'
+router.get('/:folder/*', authMiddleware, async (req, res) => {
   try {
-    const { folder, filename } = req.params;
-    const loggedInUser = req.user; // Obtido pelo authMiddleware
+    // Capturamos os parâmetros da forma correta
+    const folder = req.params.folder;
+    const filename = req.params[0]; // O nome do arquivo vem do curinga '*'
 
-    // 1. Monta o caminho completo para o arquivo original no servidor
+    // Uma verificação de segurança para impedir que usuários acessem outras pastas
+    if (!filename || filename.includes('..')) {
+      return res.status(400).json({ message: 'Nome de arquivo inválido.' });
+    }
+
+    const loggedInUser = req.user; 
     const filePath = path.join(__dirname, '..', 'uploads', folder, filename);
 
-    // Verifica se o arquivo realmente existe
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ message: 'Arquivo não encontrado.' });
     }
 
-    // 2. Cria o texto da marca d'água com o nome do usuário logado e a data
     const watermarkText = `${loggedInUser.name} - ${new Date().toLocaleDateString('pt-BR')}`;
 
-    // 3. Cria uma imagem SVG em memória para ser a marca d'água
-    // Isso nos dá mais controle sobre a aparência (cor, fonte, opacidade)
     const svgWatermark = `
       <svg width="500" height="40">
         <text 
@@ -40,16 +43,14 @@ router.get('/:folder/:filename(.+)', authMiddleware, async (req, res) => { // <-
       </svg>
     `;
 
-    // 4. Usa a biblioteca 'sharp' para ler a imagem e aplicar a marca d'água
     const imageBuffer = await sharp(filePath)
       .composite([{
         input: Buffer.from(svgWatermark),
-        gravity: 'southeast', // Posição: canto inferior direito
+        gravity: 'southeast',
       }])
-      .jpeg({ quality: 80 }) // Comprime a imagem para carregar mais rápido
+      .jpeg({ quality: 80 })
       .toBuffer();
 
-    // 5. Envia a imagem processada como resposta
     res.set('Content-Type', 'image/jpeg');
     res.send(imageBuffer);
 
