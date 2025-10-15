@@ -1,5 +1,3 @@
-// backend/routes/userRoutes.js (VERSÃO COMPLETA E FINAL COM AWS SDK v3)
-
 const express = require('express');
 const prisma = require('../lib/prisma');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -7,13 +5,12 @@ const path = require('path');
 const multer = require('multer');
 const multerS3 = require('multer-s3');
 
-// --- 1. NOVAS IMPORTAÇÕES PARA A AWS SDK v3 ---
-const { S3Client } = require('@aws-sdk/client-s3');
+// --- IMPORTAÇÕES PARA A AWS SDK v3 (COM O COMANDO DE DELETAR) ---
+const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 
 const router = express.Router();
 
-// --- 2. NOVA CONFIGURAÇÃO DA CONEXÃO COM A S3 (usando a v3) ---
-// A sintaxe para criar o cliente é um pouco diferente na v3
+// --- CONFIGURAÇÃO DA CONEXÃO COM A S3 ---
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -22,17 +19,15 @@ const s3Client = new S3Client({
   }
 });
 
-// Verificação de segurança para garantir que as variáveis de ambiente foram carregadas
 if (!process.env.AWS_BUCKET_NAME) {
-  console.error("\n!!! ERRO CRÍTICO !!! As variáveis da AWS S3 não foram encontradas. Verifique as configurações no Render.\n");
+  console.error("\n!!! ERRO CRÍTICO !!! As variáveis da AWS S3 não foram encontradas.\n");
 }
 
-// --- 3. FUNÇÃO DE UPLOAD PARA A S3 (agora usando o novo cliente v3) ---
+// --- FUNÇÃO DE UPLOAD PARA A S3 ---
 const createS3Storage = (folder) => multerS3({
-  s3: s3Client, // Passamos o novo cliente v3 aqui
+  s3: s3Client,
   bucket: process.env.AWS_BUCKET_NAME,
-  //acl: 'public-read', // Permite que os arquivos sejam visualizados publicamente
-  contentType: multerS3.AUTO_CONTENT_TYPE, // Detecta o tipo do arquivo automaticamente
+  contentType: multerS3.AUTO_CONTENT_TYPE,
   key: function (req, file, cb) {
     const userId = req.user.userId;
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -41,7 +36,7 @@ const createS3Storage = (folder) => multerS3({
   }
 });
 
-// Funções de filtro (não mudam)
+// --- FILTROS E INSTÂNCIAS DO MULTER ---
 const imageFileFilter = (req, file, cb) => {
   if (file.mimetype.startsWith('image/')) { cb(null, true); }
   else { cb(new Error('Formato de arquivo não suportado.'), false); }
@@ -51,44 +46,43 @@ const videoFileFilter = (req, file, cb) => {
     else { cb(new Error('Formato de arquivo não suportado.'), false); }
 };
 
-// Instâncias do Multer usando o novo armazenamento da S3 (não mudam)
 const uploadAvatar = multer({ storage: createS3Storage('avatars'), fileFilter: imageFileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadCover = multer({ storage: createS3Storage('covers'), fileFilter: imageFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 const uploadPhoto = multer({ storage: createS3Storage('photos'), fileFilter: imageFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 const uploadVideo = multer({ storage: createS3Storage('videos'), fileFilter: videoFileFilter, limits: { fileSize: 50 * 1024 * 1024 } });
 
 
-// ==========================================================
-// --- TODAS AS SUAS ROTAS (SEM ALTERAÇÕES, EXCETO UPLOAD) ---
-// ==========================================================
+// ===================================
+// --- ROTAS DO USUÁRIO ---
+// ===================================
 
 router.get('/profile', authMiddleware, async (req, res) => {
-  try {
-    const loggedInUserId = req.user.userId;
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const visitCount = await prisma.profileView.count({ where: { viewedProfileId: loggedInUserId, createdAt: { gte: thirtyDaysAgo } } });
-    const user = await prisma.user.findUnique({
-      where: { id: loggedInUserId },
-      select: {
-        id: true, email: true, name: true, bio: true, location: true, gender: true,
-        profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true,
-        pimentaBalance: true, interests: true, desires: true, fetishes: true
-      },
-    });
-    if (!user) { return res.status(404).json({ message: 'Usuário não encontrado.' }); }
-    let completionScore = 0;
-    if (user.profilePictureUrl) completionScore += 25;
-    if (user.bio) completionScore += 25;
-    if (user.interests) completionScore += 25;
-    if (user.location) completionScore += 25;
-    const monthlyStats = { visits: visitCount, commentsReceived: 0, commentsMade: 0 };
-    const profileData = { ...user, certificationLevel: completionScore, monthlyStats: monthlyStats };
-    res.json(profileData);
-  } catch (error) {
-    console.error("Erro ao buscar perfil do usuário:", error);
-    res.status(500).json({ message: "Erro interno do servidor." });
-  }
+    try {
+      const loggedInUserId = req.user.userId;
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const visitCount = await prisma.profileView.count({ where: { viewedProfileId: loggedInUserId, createdAt: { gte: thirtyDaysAgo } } });
+      const user = await prisma.user.findUnique({
+        where: { id: loggedInUserId },
+        select: {
+          id: true, email: true, name: true, bio: true, location: true, gender: true,
+          profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true,
+          pimentaBalance: true, interests: true, desires: true, fetishes: true
+        },
+      });
+      if (!user) { return res.status(404).json({ message: 'Usuário não encontrado.' }); }
+      let completionScore = 0;
+      if (user.profilePictureUrl) completionScore += 25;
+      if (user.bio) completionScore += 25;
+      if (user.interests) completionScore += 25;
+      if (user.location) completionScore += 25;
+      const monthlyStats = { visits: visitCount, commentsReceived: 0, commentsMade: 0 };
+      const profileData = { ...user, certificationLevel: completionScore, monthlyStats: monthlyStats };
+      res.json(profileData);
+    } catch (error) {
+      console.error("Erro ao buscar perfil do usuário:", error);
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
 });
 
 router.get('/profile/:id', authMiddleware, async (req, res) => {
@@ -280,6 +274,51 @@ router.post('/videos', authMiddleware, uploadVideo.single('video'), async (req, 
     console.error("Erro ao fazer upload do vídeo:", error);
     res.status(500).json({ message: "Erro interno do servidor ao tentar fazer upload do vídeo." });
   }
+});
+
+// ============================================
+// --- NOVA ROTA PARA APAGAR FOTOS ---
+// ============================================
+router.delete('/photos/:id', authMiddleware, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const photoId = parseInt(id, 10);
+      const userId = req.user.userId;
+  
+      // 1. Encontrar a foto no banco de dados
+      const photo = await prisma.photo.findUnique({
+        where: { id: photoId },
+      });
+  
+      // 2. Verificar se a foto existe e se pertence ao usuário logado
+      if (!photo) {
+        return res.status(404).json({ message: 'Foto não encontrada.' });
+      }
+      if (photo.authorId !== userId) {
+        return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para apagar esta foto.' });
+      }
+  
+      // 3. Apagar o arquivo do S3
+      // Extrai a 'Key' (caminho do arquivo) da URL completa
+      const s3Key = new URL(photo.url).pathname.substring(1);
+      
+      const deleteCommand = new DeleteObjectCommand({
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: s3Key,
+      });
+      await s3Client.send(deleteCommand);
+  
+      // 4. Apagar o registro da foto do banco de dados
+      await prisma.photo.delete({
+        where: { id: photoId },
+      });
+  
+      res.status(200).json({ message: 'Foto apagada com sucesso.' });
+  
+    } catch (error) {
+      console.error("Erro ao apagar a foto:", error);
+      res.status(500).json({ message: "Erro interno do servidor ao tentar apagar a foto." });
+    }
 });
 
 module.exports = router;
