@@ -22,10 +22,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 
-// ==========================================================
 // --- FUNÇÕES AUXILIARES PARA MARCA D'ÁGUA INTELIGENTE ---
-// ==========================================================
-
 const createWatermarkSvg = (username, date) => {
     const svgText = `
     <svg width="400" height="100">
@@ -41,49 +38,37 @@ const createWatermarkSvg = (username, date) => {
 
 const addWatermark = async (originalImageBuffer, username) => {
     const formattedDate = new Date().toLocaleDateString('pt-BR');
-    
-    // Pega as dimensões da imagem original para tornar a marca d'água responsiva
     const metadata = await sharp(originalImageBuffer).metadata();
     const imageWidth = metadata.width;
-
-    // Cria o SVG e o redimensiona para 50% da largura da imagem original
     const watermarkSvg = createWatermarkSvg(username, formattedDate);
     const resizedWatermarkBuffer = await sharp(watermarkSvg)
-        .resize({ width: Math.round(imageWidth * 0.5) }) // Garante que a marca d'água sempre caiba na imagem
+        .resize({ width: Math.round(imageWidth * 0.5) })
         .toBuffer();
-
-    // Aplica a marca d'água já redimensionada na imagem original
     return sharp(originalImageBuffer)
         .composite([{
             input: resizedWatermarkBuffer,
-            gravity: 'southwest', // Posição: canto inferior esquerdo
+            gravity: 'southwest',
         }])
         .toBuffer();
 };
 
 const uploadToS3 = async (file, folder, user) => {
     const watermarkedBuffer = await addWatermark(file.buffer, user.name);
-  
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = `${folder}-${user.userId}-${uniqueSuffix}${path.extname(file.originalname)}`;
     const s3Key = `${folder}/${filename}`;
-
     const command = new PutObjectCommand({
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: s3Key,
         Body: watermarkedBuffer,
         ContentType: file.mimetype,
     });
-
     await s3Client.send(command);
     return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
 };
 
 
-// ===================================
 // --- ROTAS DO USUÁRIO ---
-// ===================================
-
 router.post('/photos', authMiddleware, upload.single('photo'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
@@ -271,14 +256,41 @@ router.get('/videos', authMiddleware, async (req, res) => {
   }
 });
 
+// --- NOVAS ROTAS PARA BUSCAR DADOS DE OUTROS USUÁRIOS ---
+router.get('/user/:userId/photos', authMiddleware, async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId, 10);
+        if (isNaN(userId)) return res.status(400).json({ message: "ID de usuário inválido." });
+        const photos = await prisma.photo.findMany({ 
+            where: { authorId: userId }, 
+            orderBy: { createdAt: 'desc' } 
+        });
+        res.status(200).json(photos);
+    } catch (error) {
+        res.status(500).json({ message: "Erro ao buscar fotos do usuário." });
+    }
+});
+
+router.get('/user/:userId/videos', authMiddleware, async (req, res) => {
+    try {
+        const userId = parseInt(req.params.userId, 10);
+        if (isNaN(userId)) return res.status(400).json({ message: "ID de usuário inválido." });
+        const videos = await prisma.video.findMany({ 
+            where: { authorId: userId }, 
+            orderBy: { createdAt: 'desc' } 
+        });
+        res.status(200).json(videos);
+    } catch (error) {
+        res.status(500).json({ message: "Erro ao buscar vídeos do usuário." });
+    }
+});
+
 router.post('/videos', authMiddleware, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
-    
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = `video-${req.user.userId}-${uniqueSuffix}${path.extname(req.file.originalname)}`;
     const s3Key = `videos/${filename}`;
-    
     const command = new PutObjectCommand({
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: s3Key,
@@ -287,7 +299,6 @@ router.post('/videos', authMiddleware, upload.single('video'), async (req, res) 
     });
     await s3Client.send(command);
     const videoUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
-    
     const newVideo = await prisma.video.create({ data: { url: videoUrl, description: req.body.description, authorId: req.user.userId } });
     res.status(201).json(newVideo);
   } catch (error) {
