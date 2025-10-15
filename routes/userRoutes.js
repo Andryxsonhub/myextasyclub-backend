@@ -3,14 +3,12 @@ const prisma = require('../lib/prisma');
 const authMiddleware = require('../middleware/authMiddleware');
 const path = require('path');
 const multer = require('multer');
-const multerS3 = require('multer-s3');
+const sharp = require('sharp');
 
-// --- IMPORTAÇÕES PARA A AWS SDK v3 (COM O COMANDO DE DELETAR) ---
-const { S3Client, DeleteObjectCommand } = require('@aws-sdk/client-s3');
-
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const router = express.Router();
 
-// --- CONFIGURAÇÃO DA CONEXÃO COM A S3 ---
+// --- CONFIGURAÇÃO S3 ---
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -19,42 +17,108 @@ const s3Client = new S3Client({
   }
 });
 
-if (!process.env.AWS_BUCKET_NAME) {
-  console.error("\n!!! ERRO CRÍTICO !!! As variáveis da AWS S3 não foram encontradas.\n");
-}
+// --- CONFIGURAÇÃO DO MULTER ---
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
-// --- FUNÇÃO DE UPLOAD PARA A S3 ---
-const createS3Storage = (folder) => multerS3({
-  s3: s3Client,
-  bucket: process.env.AWS_BUCKET_NAME,
-  contentType: multerS3.AUTO_CONTENT_TYPE,
-  key: function (req, file, cb) {
-    const userId = req.user.userId;
+
+// ==========================================================
+// --- FUNÇÕES AUXILIARES PARA MARCA D'ÁGUA DINÂMICA ---
+// ==========================================================
+
+const createWatermarkSvg = (username, date) => {
+    const svgText = `
+    <svg width="400" height="100">
+      <style>
+      .title { fill: rgba(255, 255, 255, 0.5); font-size: 24px; font-family: Arial, sans-serif; font-weight: bold; }
+      </style>
+      <text x="10" y="40" class="title">${username}</text>
+      <text x="10" y="70" class="title">${date}</text>
+    </svg>
+    `;
+    return Buffer.from(svgText);
+};
+
+const addWatermark = (buffer, username) => {
+    const formattedDate = new Date().toLocaleDateString('pt-BR'); // Formato: DD/MM/AAAA
+    const watermarkSvg = createWatermarkSvg(username, formattedDate);
+
+    return sharp(buffer)
+        .composite([{
+            input: watermarkSvg,
+            gravity: 'southwest', // Posição: canto inferior esquerdo
+        }])
+        .toBuffer();
+};
+
+const uploadToS3 = async (file, folder, user) => {
+    const watermarkedBuffer = await addWatermark(file.buffer, user.name);
+  
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const filename = `${folder.slice(0, -1)}-${userId}-${uniqueSuffix}${path.extname(file.originalname)}`;
-    cb(null, `${folder}/${filename}`);
-  }
-});
+    const filename = `${folder}-${user.userId}-${uniqueSuffix}${path.extname(file.originalname)}`;
+    const s3Key = `${folder}/${filename}`;
 
-// --- FILTROS E INSTÂNCIAS DO MULTER ---
-const imageFileFilter = (req, file, cb) => {
-  if (file.mimetype.startsWith('image/')) { cb(null, true); }
-  else { cb(new Error('Formato de arquivo não suportado.'), false); }
-};
-const videoFileFilter = (req, file, cb) => {
-    if (file.mimetype.startsWith('video/')) { cb(null, true); }
-    else { cb(new Error('Formato de arquivo não suportado.'), false); }
-};
+    const command = new PutObjectCommand({
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: s3Key,
+        Body: watermarkedBuffer,
+        ContentType: file.mimetype,
+    });
 
-const uploadAvatar = multer({ storage: createS3Storage('avatars'), fileFilter: imageFileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
-const uploadCover = multer({ storage: createS3Storage('covers'), fileFilter: imageFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
-const uploadPhoto = multer({ storage: createS3Storage('photos'), fileFilter: imageFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
-const uploadVideo = multer({ storage: createS3Storage('videos'), fileFilter: videoFileFilter, limits: { fileSize: 50 * 1024 * 1024 } });
+    await s3Client.send(command);
+    return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+};
 
 
 // ===================================
 // --- ROTAS DO USUÁRIO ---
 // ===================================
+
+router.post('/photos', authMiddleware, upload.single('photo'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
+        const photoUrl = await uploadToS3(req.file, 'photos', req.user);
+        const newPhoto = await prisma.photo.create({
+            data: { url: photoUrl, description: req.body.description, authorId: req.user.userId }
+        });
+        res.status(201).json(newPhoto);
+    } catch (error) {
+        console.error("Erro no upload da foto:", error);
+        res.status(500).json({ message: "Erro interno do servidor." });
+    }
+});
+
+router.put('/profile/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
+        const avatarUrl = await uploadToS3(req.file, 'avatars', req.user);
+        const updatedUser = await prisma.user.update({
+            where: { id: req.user.userId },
+            data: { profilePictureUrl: avatarUrl },
+            select: { id: true, email: true, name: true, bio: true, location: true, gender: true, profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true }
+        });
+        res.json(updatedUser);
+    } catch (error) {
+        console.error("Erro no upload do avatar:", error);
+        res.status(500).json({ message: "Erro interno do servidor." });
+    }
+});
+
+router.post('/profile/cover', authMiddleware, upload.single('cover'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
+        const coverUrl = await uploadToS3(req.file, 'covers', req.user);
+        const updatedUser = await prisma.user.update({
+            where: { id: req.user.userId },
+            data: { coverPhotoUrl: coverUrl },
+            select: { id: true, email: true, name: true, bio: true, location: true, gender: true, profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true }
+        });
+        res.json(updatedUser);
+    } catch (error) {
+        console.error("Erro no upload da capa:", error);
+        res.status(500).json({ message: "Erro interno do servidor." });
+    }
+});
 
 router.get('/profile', authMiddleware, async (req, res) => {
     try {
@@ -117,10 +181,7 @@ router.post('/profile/:id/view', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: "Perfil visitado não encontrado." });
         }
         await prisma.profileView.create({
-            data: {
-                viewedProfileId: viewedProfileId,
-                viewerId: viewerId,
-            }
+            data: { viewedProfileId: viewedProfileId, viewerId: viewerId }
         });
         res.status(201).json({ message: "Visita registrada com sucesso." });
     } catch (error) {
@@ -137,12 +198,7 @@ router.get('/online', authMiddleware, async (req, res) => {
                 lastSeenAt: { gte: fifteenMinutesAgo },
                 id: { not: req.user.userId }
             },
-            select: {
-                id: true,
-                name: true,
-                profilePictureUrl: true,
-                gender: true,
-            },
+            select: { id: true, name: true, profilePictureUrl: true, gender: true },
             orderBy: { lastSeenAt: 'desc' },
             take: 10,
         });
@@ -159,11 +215,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
       const updatedUser = await prisma.user.update({
         where: { id: req.user.userId },
         data: { name, bio, location, gender, interests, desires, fetishes },
-        select: {
-          id: true, email: true, name: true, bio: true, location: true, gender: true,
-          profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, pimentaBalance: true,
-          interests: true, desires: true, fetishes: true
-        }
+        select: { id: true, email: true, name: true, bio: true, location: true, gender: true, profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true }
       });
       res.json(updatedUser);
     } catch (error) {
@@ -176,57 +228,16 @@ router.get('/search', authMiddleware, async (req, res) => {
     try {
       const { q } = req.query;
       const whereClause = q ? {
-        OR: [
-          { name: { contains: q, mode: 'insensitive' } },
-          { bio: { contains: q, mode: 'insensitive' } },
-        ],
+        OR: [{ name: { contains: q, mode: 'insensitive' } }, { bio: { contains: q, mode: 'insensitive' } }],
       } : {};
       const foundUsers = await prisma.user.findMany({
         where: whereClause,
-        select: { 
-          id: true, name: true, profilePictureUrl: true, location: true, gender: true, bio: true,
-        }
+        select: { id: true, name: true, profilePictureUrl: true, location: true, gender: true, bio: true }
       });
       res.status(200).json(foundUsers);
     } catch (error) {
       console.error("Erro ao buscar usuários:", error);
       res.status(500).json({ message: "Erro interno do servidor ao realizar a busca." });
-    }
-});
- 
-router.put('/profile/avatar', authMiddleware, uploadAvatar.single('avatar'), async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
-        const avatarUrl = req.file.location;
-        const updatedUser = await prisma.user.update({
-            where: { id: req.user.userId }, 
-            data: { profilePictureUrl: avatarUrl },
-            select: { id: true, email: true, name: true, bio: true, location: true, gender: true, profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true }
-        });
-        res.json(updatedUser);
-    } catch (error) {
-        console.error("Erro ao atualizar avatar:", error);
-        res.status(500).json({ message: "Erro interno do servidor ao atualizar avatar." });
-    }
-});
-
-router.post('/profile/cover', authMiddleware, uploadCover.single('cover'), async (req, res) => {
-    try {
-        if (!req.file) { return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' }); }
-        const coverUrl = req.file.location;
-        const updatedUser = await prisma.user.update({
-            where: { id: req.user.userId },
-            data: { coverPhotoUrl: coverUrl },
-            select: { 
-                id: true, email: true, name: true, bio: true, location: true, gender: true, 
-                profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, 
-                pimentaBalance: true, interests: true, desires: true, fetishes: true 
-            }
-        });
-        res.json(updatedUser);
-    } catch (error) {
-        console.error("Erro ao atualizar foto de capa:", error);
-        res.status(500).json({ message: "Erro interno do servidor ao atualizar a foto de capa." });
     }
 });
 
@@ -240,19 +251,6 @@ router.get('/photos', authMiddleware, async (req, res) => {
     }
 });
 
-router.post('/photos', authMiddleware, uploadPhoto.single('photo'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
-    const { description } = req.body;
-    const photoUrl = req.file.location;
-    const newPhoto = await prisma.photo.create({ data: { url: photoUrl, description: description, authorId: req.user.userId, } });
-    res.status(201).json(newPhoto);
-  } catch (error) {
-    console.error("Erro ao fazer upload da foto:", error);
-    res.status(500).json({ message: "Erro interno do servidor ao tentar fazer upload da foto." });
-  }
-});
-
 router.get('/videos', authMiddleware, async (req, res) => {
   try {
     const videos = await prisma.video.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -263,12 +261,26 @@ router.get('/videos', authMiddleware, async (req, res) => {
   }
 });
 
-router.post('/videos', authMiddleware, uploadVideo.single('video'), async (req, res) => {
+// A rota de upload de vídeo permanece sem marca d'água.
+router.post('/videos', authMiddleware, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
-    const { description } = req.body;
-    const videoUrl = req.file.location;
-    const newVideo = await prisma.video.create({ data: { url: videoUrl, description: description, authorId: req.user.userId } });
+    
+    // Upload direto para o S3, sem processamento
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const filename = `video-${req.user.userId}-${uniqueSuffix}${path.extname(req.file.originalname)}`;
+    const s3Key = `videos/${filename}`;
+    
+    const command = new PutObjectCommand({
+        Bucket: process.env.AWS_BUCKET_NAME,
+        Key: s3Key,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype,
+    });
+    await s3Client.send(command);
+    const videoUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+    
+    const newVideo = await prisma.video.create({ data: { url: videoUrl, description: req.body.description, authorId: req.user.userId } });
     res.status(201).json(newVideo);
   } catch (error) {
     console.error("Erro ao fazer upload do vídeo:", error);
@@ -276,48 +288,22 @@ router.post('/videos', authMiddleware, uploadVideo.single('video'), async (req, 
   }
 });
 
-// ============================================
-// --- NOVA ROTA PARA APAGAR FOTOS ---
-// ============================================
 router.delete('/photos/:id', authMiddleware, async (req, res) => {
     try {
-      const { id } = req.params;
-      const photoId = parseInt(id, 10);
-      const userId = req.user.userId;
-  
-      // 1. Encontrar a foto no banco de dados
-      const photo = await prisma.photo.findUnique({
-        where: { id: photoId },
-      });
-  
-      // 2. Verificar se a foto existe e se pertence ao usuário logado
-      if (!photo) {
-        return res.status(404).json({ message: 'Foto não encontrada.' });
-      }
-      if (photo.authorId !== userId) {
-        return res.status(403).json({ message: 'Acesso negado. Você não tem permissão para apagar esta foto.' });
-      }
-  
-      // 3. Apagar o arquivo do S3
-      // Extrai a 'Key' (caminho do arquivo) da URL completa
-      const s3Key = new URL(photo.url).pathname.substring(1);
-      
-      const deleteCommand = new DeleteObjectCommand({
-        Bucket: process.env.AWS_BUCKET_NAME,
-        Key: s3Key,
-      });
-      await s3Client.send(deleteCommand);
-  
-      // 4. Apagar o registro da foto do banco de dados
-      await prisma.photo.delete({
-        where: { id: photoId },
-      });
-  
-      res.status(200).json({ message: 'Foto apagada com sucesso.' });
-  
+        const { id } = req.params;
+        const photoId = parseInt(id, 10);
+        const userId = req.user.userId;
+        const photo = await prisma.photo.findUnique({ where: { id: photoId } });
+        if (!photo) { return res.status(404).json({ message: 'Foto não encontrada.' }); }
+        if (photo.authorId !== userId) { return res.status(403).json({ message: 'Acesso negado.' }); }
+        const s3Key = new URL(photo.url).pathname.substring(1);
+        const deleteCommand = new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: s3Key });
+        await s3Client.send(deleteCommand);
+        await prisma.photo.delete({ where: { id: photoId } });
+        res.status(200).json({ message: 'Foto apagada com sucesso.' });
     } catch (error) {
-      console.error("Erro ao apagar a foto:", error);
-      res.status(500).json({ message: "Erro interno do servidor ao tentar apagar a foto." });
+        console.error("Erro ao apagar a foto:", error);
+        res.status(500).json({ message: "Erro interno do servidor." });
     }
 });
 
