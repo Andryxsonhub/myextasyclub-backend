@@ -31,7 +31,7 @@ if (!process.env.AWS_BUCKET_NAME) {
 const createS3Storage = (folder) => multerS3({
   s3: s3Client, // Passamos o novo cliente v3 aqui
   bucket: process.env.AWS_BUCKET_NAME,
-  acl: 'public-read', // Permite que os arquivos sejam visualizados publicamente
+  //acl: 'public-read', // Permite que os arquivos sejam visualizados publicamente
   contentType: multerS3.AUTO_CONTENT_TYPE, // Detecta o tipo do arquivo automaticamente
   key: function (req, file, cb) {
     const userId = req.user.userId;
