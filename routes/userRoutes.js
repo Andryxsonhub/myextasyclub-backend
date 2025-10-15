@@ -23,7 +23,7 @@ const upload = multer({ storage: storage });
 
 
 // ==========================================================
-// --- FUNÇÕES AUXILIARES PARA MARCA D'ÁGUA DINÂMICA ---
+// --- FUNÇÕES AUXILIARES PARA MARCA D'ÁGUA INTELIGENTE ---
 // ==========================================================
 
 const createWatermarkSvg = (username, date) => {
@@ -39,13 +39,23 @@ const createWatermarkSvg = (username, date) => {
     return Buffer.from(svgText);
 };
 
-const addWatermark = (buffer, username) => {
-    const formattedDate = new Date().toLocaleDateString('pt-BR'); // Formato: DD/MM/AAAA
-    const watermarkSvg = createWatermarkSvg(username, formattedDate);
+const addWatermark = async (originalImageBuffer, username) => {
+    const formattedDate = new Date().toLocaleDateString('pt-BR');
+    
+    // Pega as dimensões da imagem original para tornar a marca d'água responsiva
+    const metadata = await sharp(originalImageBuffer).metadata();
+    const imageWidth = metadata.width;
 
-    return sharp(buffer)
+    // Cria o SVG e o redimensiona para 50% da largura da imagem original
+    const watermarkSvg = createWatermarkSvg(username, formattedDate);
+    const resizedWatermarkBuffer = await sharp(watermarkSvg)
+        .resize({ width: Math.round(imageWidth * 0.5) }) // Garante que a marca d'água sempre caiba na imagem
+        .toBuffer();
+
+    // Aplica a marca d'água já redimensionada na imagem original
+    return sharp(originalImageBuffer)
         .composite([{
-            input: watermarkSvg,
+            input: resizedWatermarkBuffer,
             gravity: 'southwest', // Posição: canto inferior esquerdo
         }])
         .toBuffer();
@@ -261,12 +271,10 @@ router.get('/videos', authMiddleware, async (req, res) => {
   }
 });
 
-// A rota de upload de vídeo permanece sem marca d'água.
 router.post('/videos', authMiddleware, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
     
-    // Upload direto para o S3, sem processamento
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = `video-${req.user.userId}-${uniqueSuffix}${path.extname(req.file.originalname)}`;
     const s3Key = `videos/${filename}`;
