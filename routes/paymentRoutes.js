@@ -1,21 +1,15 @@
-// backend/routes/paymentRoutes.js (VERSÃO DEFINITIVA COM TOKENS CORRETOS)
+// routes/paymentRoutes.js — alinhado ao schema Transaction + tax_id obrigatório em PROD
 
 const express = require('express');
 const prisma = require('../lib/prisma');
 const authMiddleware = require('../middleware/authMiddleware');
-const axios = require('axios');
-const qs = require('querystring');
+const { createPagBankCharge } = require('../services/pagbankService');
 
 const router = express.Router();
 
-// Lendo TODAS as credenciais do PagBank a partir do .env
-const BASE_URL = process.env.BASE_URL || "https://seu-servidor.com";
-const PAGBANK_EMAIL = process.env.PAGBANK_EMAIL;
-const PAGBANK_APP_TOKEN = process.env.PAGBANK_APP_TOKEN;     // Token para PIX
-const PAGBANK_SELLER_TOKEN = process.env.PAGBANK_SELLER_TOKEN; // Token para Cartão (Direct Payment)
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-
-// Rota 1: Listar pacotes
+/**
+ * GET /api/payments/packages
+ */
 router.get('/packages', authMiddleware, async (req, res) => {
   try {
     const packages = await prisma.pimentaPackage.findMany({
@@ -23,129 +17,94 @@ router.get('/packages', authMiddleware, async (req, res) => {
     });
     res.status(200).json(packages);
   } catch (error) {
-    console.error("Erro ao buscar pacotes de pimentas:", error);
+    console.error('Erro ao buscar pacotes:', error);
     res.status(500).json({ message: 'Erro ao buscar pacotes.' });
   }
 });
 
-
-// ===================================================================================
-// ROTAS ANTIGAS (ESPECÍFICAS PARA PIMENTAS) - MANTIDAS PARA COMPATIBILIDADE
-// ⚠️ ATENÇÃO: ESTAS ROTAS VÃO DAR ERRO SE CHAMADAS, POIS O ARQUIVO 'pagbankService.js' MUDOU.
-// ===================================================================================
-router.post('/create-pix-order', authMiddleware, async (req, res) => {
-  const { packageId } = req.body;
+/**
+ * POST /api/payments/checkout
+ * body: { packageId: number, method: 'PIX' | 'CREDIT_CARD', card?: {...}, customerTaxId?: string }
+ */
+router.post('/checkout', authMiddleware, async (req, res) => {
+  const { packageId, method, card, customerTaxId } = req.body;
   const userId = req.user.userId;
 
-  if (!packageId) {
-    return res.status(400).json({ message: 'O ID do pacote é obrigatório.' });
+  if (!packageId || !method) {
+    return res.status(400).json({ message: 'Dados insuficientes: informe o pacote e o método.' });
   }
 
   try {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    const pimentaPackage = await prisma.pimentaPackage.findUnique({ where: { id: packageId } });
+    const [pkg, user] = await Promise.all([
+      prisma.pimentaPackage.findUnique({ where: { id: packageId } }),
+      prisma.user.findUnique({ where: { id: userId } }),
+    ]);
 
-    if (!user || !pimentaPackage) {
+    if (!pkg || !user) {
       return res.status(404).json({ message: 'Usuário ou pacote não encontrado.' });
     }
 
-    const orderData = {
-      customer: { name: user.name, email: user.email, tax_id: '12345678909' },
-      items: [{ name: pimentaPackage.name, quantity: 1, unit_amount: pimentaPackage.priceInCents }],
-      qr_codes: [{ amount: { value: pimentaPackage.priceInCents }, expiration_date: new Date(new Date().getTime() + 30 * 60 * 1000).toISOString() }],
-      notification_urls: [`${BASE_URL}/api/payments/webhook`],
-    };
+    // tax_id — exigido pelo PagBank em PRODUÇÃO
+    const rawTaxFromFront = customerTaxId || '';
+    const rawTaxFromUser = user.cpf || user.taxId || user.tax_id || '';
+    const taxIdDigits = String(rawTaxFromFront || rawTaxFromUser).replace(/\D/g, '');
 
-    const ORDERS_API_URL = 'https://sandbox.api.pagseguro.com';
+    const isProd = process.env.NODE_ENV === 'production';
+    if (isProd && !(taxIdDigits.length === 11 || taxIdDigits.length === 14)) {
+      return res.status(400).json({
+        message: 'CPF/CNPJ obrigatório para concluir o pagamento.',
+        code: 'CUSTOMER_TAX_ID_REQUIRED',
+      });
+    }
 
-    const response = await axios.post(`${ORDERS_API_URL}/orders`, orderData, {
-      headers: {
-        // CORREÇÃO: Usando o Token de Aplicação (APP_TOKEN) para a API de Ordens
-        'Authorization': `Bearer ${PAGBANK_APP_TOKEN}`,
-        'Content-Type': 'application/json',
+    // cria transação interna (PENDING) — seu schema Transaction:
+    // id (cuid), userId, productId, productType, productName, amountInCents, status, pagbankChargeId?
+    const transaction = await prisma.transaction.create({
+      data: {
+        userId,
+        productId: String(pkg.id),
+        productType: 'PIMENTA_PACKAGE',
+        productName: pkg.name,
+        amountInCents: pkg.priceInCents,
+        status: 'PENDING',
       },
     });
 
-    const pagbankOrder = response.data;
-    
-    await prisma.transaction.create({
-      data: {
-        pagbankChargeId: pagbankOrder.charges[0].id,
-        userId: user.id,
-        packageId: String(pimentaPackage.id),
-        packageName: pimentaPackage.name,
-        pimentaAmount: pimentaPackage.pimentaAmount,
-        amountInCents: pimentaPackage.priceInCents,
-        status: 'PENDING',
-      }
-    });
+    // envia cobrança ao PagBank
+    const paymentResponse = await createPagBankCharge(
+      { id: transaction.id, productName: pkg.name, amountInCents: pkg.priceInCents },
+      { name: user.name, email: user.email, taxId: taxIdDigits },
+      { method, card }
+    );
 
-    res.status(201).json(pagbankOrder);
+    return res.status(201).json(paymentResponse);
   } catch (error) {
-    console.error("Erro ao criar ordem PIX no PagBank:", error);
-    res.status(500).json({ message: 'Erro ao se comunicar com o provedor de pagamento.' });
+    console.error('Erro ao criar checkout:', error.response?.data || error.message);
+    return res.status(500).json({ message: 'Erro ao processar pagamento.' });
   }
 });
 
-// ROTA 3: Processar Cartão com a API Direct Payment
-router.post('/process-card-v2', authMiddleware, async (req, res) => {
-    const { packageId, cardToken, senderHash, holderName, holderDocument } = req.body;
-    const userId = req.user.userId;
-
-    try {
-        const selectedPackage = await prisma.pimentaPackage.findUnique({ where: { id: packageId } });
-        const user = await prisma.user.findUnique({ where: { id: userId } });
-        if (!selectedPackage || !user) {
-            return res.status(404).json({ message: 'Usuário ou pacote não encontrado.' });
-        }
-
-        const paymentPayload = {
-            paymentMode: 'default',
-            paymentMethod: 'creditCard',
-            receiverEmail: PAGBANK_EMAIL,
-            currency: 'BRL',
-            itemId1: selectedPackage.id,
-            itemDescription1: selectedPackage.name,
-            itemAmount1: (selectedPackage.priceInCents / 100).toFixed(2),
-            itemQuantity1: 1,
-            senderName: holderName,
-            senderCPF: holderDocument,
-            senderEmail: user.email,
-            senderHash: senderHash,
-            creditCardToken: cardToken,
-            installmentQuantity: 1,
-            installmentValue: (selectedPackage.priceInCents / 100).toFixed(2),
-            noInterestInstallmentQuantity: 1,
-            creditCardHolderName: holderName,
-            creditCardHolderCPF: holderDocument,
-        };
-
-        const DIRECT_PAYMENT_API_URL = 'https://ws.sandbox.pagseguro.uol.com.br';
-
-        const response = await axios.post(
-            // CORREÇÃO: Usando o Token de Vendedor (SELLER_TOKEN) para a API Direct Payment
-            `${DIRECT_PAYMENT_API_URL}/v2/transactions?email=${PAGBANK_EMAIL}&token=${PAGBANK_SELLER_TOKEN}`,
-            qs.stringify(paymentPayload),
-            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        );
-
-        const transaction = response.data;
-        const status = transaction.transaction ? transaction.transaction.status : transaction.status;
-
-        if (status === '3' || status === '4') {
-             const updatedUser = await prisma.user.update({
-                where: { id: userId },
-                data: { pimentaBalance: { increment: selectedPackage.pimentaAmount } },
-            });
-            return res.status(200).json({ newPimentaBalance: updatedUser.pimentaBalance });
-        } else {
-             return res.status(400).json({ message: `Pagamento não aprovado. Status: ${status}` });
-        }
-        res.status(200).send('Webhook recebido com sucesso.');
-    } catch (error) {
-        console.error("Erro na transação Direct Payment:", error.response?.data?.errors || error.message);
-        return res.status(500).json({ message: 'Erro ao processar pagamento.' });
+/**
+ * Compat: POST /api/payments/create-pix-order -> redireciona para o fluxo novo (PIX)
+ */
+router.post('/create-pix-order', authMiddleware, async (req, res) => {
+  try {
+    const { packageId, customerTaxId } = req.body;
+    if (!packageId) {
+      return res.status(400).json({ message: 'O ID do pacote é obrigatório.' });
     }
+
+    // Chama o mesmo endpoint novo internamente
+    req.body = {
+      packageId,
+      method: 'PIX',
+      customerTaxId: customerTaxId || undefined,
+    };
+    return router.handle(req, res);
+  } catch (error) {
+    console.error('CREATE_PIX_ORDER_COMPAT_ERR', error.response?.data || error.message);
+    return res.status(500).json({ message: 'Erro ao criar ordem PIX.' });
+  }
 });
 
 module.exports = router;

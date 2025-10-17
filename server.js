@@ -23,13 +23,34 @@ const mediaRoutes = require('./routes/mediaRoutes'); // Rota da marca d'água
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
 
+// 🔔 Webhook PagBank (precisa vir ANTES do express.json())
+const pagbankWebhook = require('./webhooks/pagbankWebhook');
+
 const app = express();
 const port = process.env.PORT || 3333;
 
+// Render/Proxy: habilita X-Forwarded-* corretamente (cookies, secure, etc.)
+app.set('trust proxy', 1);
+
+// ======================
+// 1) MONTA O WEBHOOK AQUI
+// ======================
+// ⚠️ O pagbankWebhook já usa express.raw internamente.
+//    Ele precisa ser montado antes de qualquer body parser JSON global.
+app.use(pagbankWebhook);
+
+// ======================
+// 2) DEMAIS PARSERS E CORS
+// ======================
 const allowedOrigins = [
-  'http://localhost:5173', 'http://localhost:4173', 'http://localhost:3000',
-  process.env.FRONTEND_URL, 'https://myextasyclub.com', 'https://www.myextasyclub.com'
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://localhost:3000',
+  process.env.FRONTEND_URL,
+  'https://myextasyclub.com',
+  'https://www.myextasyclub.com'
 ];
+
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.indexOf(origin) !== -1) {
@@ -42,12 +63,19 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+// Parsers globais (depois do webhook)
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Configuração das rotas da API
+// ======================
+// 3) ROTAS PÚBLICAS
+// ======================
 app.use('/api', authRoutes);
 app.use('/api/products', productRoutes);
 
+// ======================
+// 4) SOCKET.IO
+// ======================
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
@@ -57,14 +85,17 @@ const io = new Server(server, {
   }
 });
 
-// Rotas protegidas e com middleware
-app.use('/api/media', mediaRoutes); // A LINHA QUE FALTAVA
+// ======================
+// 5) ROTAS PROTEGIDAS
+// ======================
+app.use('/api/media', mediaRoutes); // pública ou protegida? (mantive como estava)
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
 app.use('/api/lives', authMiddleware, updateLastSeen, liveRoutes(io));
 
+// Endpoint de perfil do usuário autenticado
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
     const fullUser = await prisma.user.findUnique({ where: { id: req.user.userId } });
@@ -77,7 +108,7 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   }
 });
 
-// Lógica do Socket.IO (Chat)
+// Chat (Socket.IO)
 io.on('connection', (socket) => {
   console.log(`🔌 Um usuário se conectou ao chat. ID: ${socket.id}`);
   socket.on('join_room', (roomName) => { socket.join(roomName); });
@@ -85,7 +116,9 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => { console.log(`🔌 Um usuário se desconectou. ID: ${socket.id}`); });
 });
 
-// Inicia o servidor
+// ======================
+// 6) START
+// ======================
 server.listen(port, () => {
   console.log(`✅ Servidor backend rodando na porta ${port}`);
   console.log('🚀 Servidor de Chat (Socket.IO) pronto para conexões.');
