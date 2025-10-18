@@ -1,5 +1,4 @@
-// routes/paymentRoutes.js — alinhado ao schema Transaction + tax_id obrigatório em PROD
-
+// backend/routes/paymentRoutes.js
 const express = require('express');
 const prisma = require('../lib/prisma');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -7,10 +6,8 @@ const { createPagBankCharge } = require('../services/pagbankService');
 
 const router = express.Router();
 
-/**
- * GET /api/payments/packages
- */
-router.get('/packages', authMiddleware, async (req, res) => {
+/** GET /api/payments/packages */
+router.get('/packages', authMiddleware, async (_req, res) => {
   try {
     const packages = await prisma.pimentaPackage.findMany({
       orderBy: { priceInCents: 'asc' },
@@ -24,7 +21,7 @@ router.get('/packages', authMiddleware, async (req, res) => {
 
 /**
  * POST /api/payments/checkout
- * body: { packageId: number, method: 'PIX' | 'CREDIT_CARD', card?: {...}, customerTaxId?: string }
+ * body: { packageId, method: 'PIX' | 'CREDIT_CARD', card?: {encryptedCard, holderName}, customerTaxId? }
  */
 router.post('/checkout', authMiddleware, async (req, res) => {
   const { packageId, method, card, customerTaxId } = req.body;
@@ -36,15 +33,12 @@ router.post('/checkout', authMiddleware, async (req, res) => {
 
   try {
     const [pkg, user] = await Promise.all([
-      prisma.pimentaPackage.findUnique({ where: { id: packageId } }),
+      prisma.pimentaPackage.findUnique({ where: { id: Number(packageId) } }),
       prisma.user.findUnique({ where: { id: userId } }),
     ]);
+    if (!pkg || !user) return res.status(404).json({ message: 'Usuário ou pacote não encontrado.' });
 
-    if (!pkg || !user) {
-      return res.status(404).json({ message: 'Usuário ou pacote não encontrado.' });
-    }
-
-    // tax_id — exigido pelo PagBank em PRODUÇÃO
+    // CPF/CNPJ — obrigatório em produção
     const rawTaxFromFront = customerTaxId || '';
     const rawTaxFromUser = user.cpf || user.taxId || user.tax_id || '';
     const taxIdDigits = String(rawTaxFromFront || rawTaxFromUser).replace(/\D/g, '');
@@ -57,8 +51,7 @@ router.post('/checkout', authMiddleware, async (req, res) => {
       });
     }
 
-    // cria transação interna (PENDING) — seu schema Transaction:
-    // id (cuid), userId, productId, productType, productName, amountInCents, status, pagbankChargeId?
+    // cria transação interna
     const transaction = await prisma.transaction.create({
       data: {
         userId,
@@ -70,40 +63,32 @@ router.post('/checkout', authMiddleware, async (req, res) => {
       },
     });
 
-    // envia cobrança ao PagBank
+    // cria cobrança no PagBank
     const paymentResponse = await createPagBankCharge(
       { id: transaction.id, productName: pkg.name, amountInCents: pkg.priceInCents },
-      { name: user.name, email: user.email, taxId: taxIdDigits },
+      { name: user.name, email: user.email, taxId: taxIdDigits || undefined },
       { method, card }
     );
 
-    return res.status(201).json(paymentResponse);
+    res.status(201).json(paymentResponse);
   } catch (error) {
-    console.error('Erro ao criar checkout:', error.response?.data || error.message);
-    return res.status(500).json({ message: 'Erro ao processar pagamento.' });
+    console.error('Erro ao criar checkout:', error?.response?.data || error.message);
+    res.status(500).json({ message: 'Erro ao processar pagamento.' });
   }
 });
 
-/**
- * Compat: POST /api/payments/create-pix-order -> redireciona para o fluxo novo (PIX)
- */
-router.post('/create-pix-order', authMiddleware, async (req, res) => {
+/** Compat: POST /api/payments/create-pix-order */
+router.post('/create-pix-order', authMiddleware, async (req, res, next) => {
   try {
     const { packageId, customerTaxId } = req.body;
-    if (!packageId) {
-      return res.status(400).json({ message: 'O ID do pacote é obrigatório.' });
-    }
-
-    // Chama o mesmo endpoint novo internamente
-    req.body = {
-      packageId,
-      method: 'PIX',
-      customerTaxId: customerTaxId || undefined,
-    };
-    return router.handle(req, res);
-  } catch (error) {
-    console.error('CREATE_PIX_ORDER_COMPAT_ERR', error.response?.data || error.message);
-    return res.status(500).json({ message: 'Erro ao criar ordem PIX.' });
+    if (!packageId) return res.status(400).json({ message: 'O ID do pacote é obrigatório.' });
+    req.body = { packageId, method: 'PIX', customerTaxId: customerTaxId || undefined };
+    // reusa o handler /checkout
+    req.url = '/checkout';
+    next();
+  } catch (e) {
+    console.error('CREATE_PIX_ORDER_COMPAT_ERR', e?.response?.data || e.message);
+    res.status(500).json({ message: 'Erro ao criar ordem PIX.' });
   }
 });
 
