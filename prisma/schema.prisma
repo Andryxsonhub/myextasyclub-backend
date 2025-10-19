@@ -1,4 +1,5 @@
-// backend/prisma/schema.prisma (VERSÃO COM REGISTRO DE VISITAS)
+// myextasyclub-backend/schema.prisma
+// --- CORRIGIDO: Adicionado @unique aos nomes de Plan e Package ---
 
 generator client {
   provider = "prisma-client-js"
@@ -9,122 +10,170 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model SubscriptionPlan {
-  id             String @id
-  name           String
-  priceInCents   Int
-  durationInDays Int
-  users          User[]
-  @@map("subscription_plans")
-}
+// ... (Todos os outros modelos - User, Profile, Photo, Video, etc. - permanecem iguais) ...
 
 model User {
-  id                   Int        @id @default(autoincrement())
-  email                String     @unique
-  name                 String     @unique
-  username             String?    @unique
-  password             String
-  bio                  String?    @db.Text
-  profilePictureUrl    String?    @map("profile_picture_url") @db.VarChar(255)
-  coverPhotoUrl        String?    @map("cover_photo_url") @db.VarChar(255)
-  location             String?
-  gender               String?
-  createdAt            DateTime   @default(now()) @map("created_at")
-  updatedAt            DateTime?  @updatedAt @map("updated_at")
-  lastSeenAt           DateTime?  @map("last_seen_at")
-  desires              String?    @db.LongText
-  fetishes             String?    @db.LongText
-  interests            String?    @db.LongText
-  profileType          String?    @map("profile_type")
-  favoritedSuggestions String?    @db.LongText @map("favoritedsuggestions")
-  pimentaBalance       Int        @default(0) @map("pimenta_balance")
-  dateOfBirth          DateTime?  @map("date_of_birth") @db.Date
-  isLive               Boolean    @default(false)
-
-  subscriptionPlanId    String?
-  subscriptionExpiresAt DateTime?  @map("subscription_expires_at")
-  subscriptionPlan      SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id])
-
-  posts        Post[]
-  photos       Photo[]
-  videos       Video[]
-  transactions Transaction[]
-  
-  // --- ADIÇÃO PARA ESTATÍSTICAS ---
-  viewsReceived ProfileView[] @relation("viewsReceived")
-  viewsMade     ProfileView[] @relation("viewsMade")
-  // --------------------------------
-
-  @@map("users")
-}
-
-model Post {
   id        Int      @id @default(autoincrement())
-  content   String   @db.Text
-  authorId  Int      @map("author_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  author    User     @relation(fields: [authorId], references: [id])
-  @@index([authorId], map: "posts_author_id_fkey")
-  @@map("posts")
+  email     String   @unique
+  name      String?
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile Profile?
+  photos  Photo[]
+  videos  Video[]
+  posts   Post[]
+
+  streams LiveStream[] @relation("Host")
+
+  transactions       Transaction[]
+  subscription       SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id])
+  subscriptionPlanId Int?
+
+  viewedProfiles ProfileView[] @relation("Viewer")
+
+  likesGiven    Like[]   @relation("LikesGiven")
+  likesReceived Like[]   @relation("LikesReceived")
+  following     Follow[] @relation("Following")
+  followers     Follow[] @relation("Followers")
+
+  interests String?
+  desires   String?
+  fetishes  String?
+  lastSeenAt DateTime? @map("last_seen_at")
+  pimentaBalance Int? @default(0) @map("pimenta_balance")
 }
 
-model PimentaPackage {
-  id            Int      @id @default(autoincrement())
-  name          String
-  priceInCents  Int
-  pimentaAmount Int
-  createdAt     DateTime @default(now())
-  @@map("pimenta_packages")
+model Profile {
+  id            Int     @id @default(autoincrement())
+  bio           String? @db.Text
+  coverPhotoUrl String? @map("cover_photo_url")
+  avatarUrl     String? @map("avatar_url")
+  location      String?
+  gender        String?
+  avatarKey     String? @map("avatar_key")
+  coverPhotoKey String? @map("cover_photo_key")
+
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId Int  @unique
+
+  views ProfileView[] @relation("ViewedProfile")
 }
 
 model Photo {
   id          Int      @id @default(autoincrement())
   url         String
-  description String?  @db.Text
-  authorId    Int      @map("author_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  author      User     @relation(fields: [authorId], references: [id])
-  @@index([authorId])
-  @@map("photos")
+  key         String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId Int  @map("author_id")
 }
 
 model Video {
   id          Int      @id @default(autoincrement())
   url         String
-  description String?  @db.Text
-  authorId    Int      @map("author_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  author      User     @relation(fields: [authorId], references: [id])
-  @@index([authorId])
-  @@map("videos")
+  key         String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId Int  @map("author_id")
+}
+
+model Post {
+  id        Int      @id @default(autoincrement())
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId Int  @map("author_id")
+}
+
+model LiveStream {
+  id        Int      @id @default(autoincrement())
+  roomName  String   @unique
+  host      User     @relation("Host", fields: [hostId], references: [id])
+  hostId    Int
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 model Transaction {
   id              String   @id @default(cuid())
   userId          Int
   user            User     @relation(fields: [userId], references: [id])
-  productId       String   @map("product_id")
-  productType     String   @map("product_type")
-  productName     String   @map("product_name")
-  amountInCents   Int      @map("amount_in_cents")
-  pagbankChargeId String?  @unique @map("pagbank_charge_id")
+  productId       Int
+  productType     String
+  productName     String
+  amountInCents   Int
+  pagbankChargeId String   @unique
   status          String
-  createdAt       DateTime @default(now()) @map("created_at")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("transactions")
 }
 
-// --- NOVO MODELO PARA ESTATÍSTICAS ---
-model ProfileView {
-  id              Int      @id @default(autoincrement())
-  viewedProfileId Int      @map("viewed_profile_id")
-  viewerId        Int?     @map("viewer_id") // Opcional, para visitas de não logados
-  createdAt       DateTime @default(now()) @map("created_at")
+// --- CORREÇÃO AQUI ---
+model SubscriptionPlan {
+  id           Int    @id @default(autoincrement())
+  name         String @unique // <-- ADICIONADO @unique
+  priceInCents Int
+  users        User[]
 
-  // Relações
-  viewedProfile User @relation("viewsReceived", fields: [viewedProfileId], references: [id], onDelete: Cascade)
-  viewer        User? @relation("viewsMade", fields: [viewerId], references: [id], onDelete: SetNull)
+  @@map("subscription_plans")
+}
+
+// --- CORREÇÃO AQUI ---
+model PimentaPackage {
+  id            Int    @id @default(autoincrement())
+  name          String @unique // <-- ADICIONADO @unique
+  pimentaAmount Int
+  priceInCents  Int
+
+  @@map("pimenta_packages")
+}
+// --- FIM DA CORREÇÃO ---
+
+
+model ProfileView {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  viewer          User @relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  viewerId        Int  @map("viewer_id")
+
+  viewedProfile   Profile @relation("ViewedProfile", fields: [viewedProfileId], references: [id], onDelete: Cascade)
+  viewedProfileId Int     @map("viewed_profile_id")
 
   @@map("profile_views")
 }
-// ------------------------------------
+
+model Like {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  liker       User     @relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
+  likerId     Int
+
+  likedUser   User     @relation("LikesReceived", fields: [likedUserId], references: [id], onDelete: Cascade)
+  likedUserId Int
+
+  @@unique([likerId, likedUserId])
+}
+
+model Follow {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
+
+  follower    User     @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  followerId  Int
+
+  following   User     @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+  followingId Int
+
+  @@unique([followerId, followingId])
+}

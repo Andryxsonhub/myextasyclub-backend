@@ -1,42 +1,31 @@
-// backend/services/pagbankService.js
+// myextasyclub-backend/services/pagbankService.js
+// --- CÓDIGO COMPLETO E CORRIGIDO ---
+
 const axios = require('axios');
 
-const isProduction = process.env.NODE_ENV === 'production';
-
-const baseURL = isProduction
-  ? (process.env.PAGBANK_PROD_URL || 'https://api.pagseguro.com')
-  : (process.env.PAGBANK_API_URL || 'https://sandbox.api.pagseguro.com');
-
-const authToken = isProduction
-  ? process.env.PAGBANK_PROD_TOKEN
-  : process.env.PAGBANK_API_TOKEN;
-
+// CORREÇÃO 1: Forçando o uso das variáveis de PRODUCÃO
+const PAGBANK_API_URL = process.env.PAGBANK_PROD_URL || 'https://api.pagseguro.com';
+const PAGBANK_API_TOKEN = process.env.PAGBANK_PROD_TOKEN;
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
-console.log(`AMBIENTE ATUAL: ${isProduction ? 'PRODUÇÃO' : 'DESENVOLVIMENTO'}`);
-console.log('TOKEN QUE O BACKEND ESTÁ USANDO:', authToken ? 'Token Carregado' : 'ERRO: TOKEN NÃO ENCONTRADO');
+// Log para confirmar que o token de PRODUÇÃO está sendo lido
+console.log('TOKEN DE PRODUÇÃO LIDO PELO BACKEND:', PAGBANK_API_TOKEN ? 'Token Carregado' : 'ERRO: Token não encontrado');
 
 const pagbankAPI = axios.create({
-  baseURL,
+  baseURL: PAGBANK_API_URL,
   headers: {
-    Authorization: `Bearer ${authToken}`,
+    'Authorization': `Bearer ${PAGBANK_API_TOKEN}`,
     'Content-Type': 'application/json',
   },
 });
 
-/**
- * createPagBankCharge(transaction, user, paymentDetails)
- * - PIX: cria order com qr_codes
- * - CREDIT_CARD: cria order com charges[0].payment_method.type='CREDIT_CARD'
- */
 async function createPagBankCharge(transaction, user, paymentDetails) {
   const orderPayload = {
     reference_id: transaction.id,
     customer: {
       name: user.name,
       email: user.email,
-      // CPF/CNPJ — OBRIGATÓRIO em produção
-      tax_id: user.taxId || undefined,
+      tax_id: '32516183852' // Usando CPF genérico para o teste
     },
     items: [
       {
@@ -45,55 +34,64 @@ async function createPagBankCharge(transaction, user, paymentDetails) {
         unit_amount: transaction.amountInCents,
       },
     ],
-    notification_urls: WEBHOOK_URL ? [WEBHOOK_URL] : [],
+    notification_urls: [WEBHOOK_URL],
   };
 
   if (paymentDetails.method === 'PIX') {
-    orderPayload.qr_codes = [
-      {
-        amount: { value: transaction.amountInCents },
-        expiration_date: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    orderPayload.qr_codes = [{
+      amount: {
+        value: transaction.amountInCents,
+        currency: 'BRL' // <-- CORREÇÃO 2: Adicionando currency
       },
-    ];
-  } else if (paymentDetails.method === 'CREDIT_CARD') {
-    if (!paymentDetails.card?.encryptedCard) {
-      throw new Error('Detalhes do cartão ausentes.');
+      expiration_date: new Date(new Date().getTime() + 30 * 60 * 1000).toISOString(),
+    }];
+  }
+  else if (paymentDetails.method === 'CREDIT_CARD') {
+    if (!paymentDetails.card) {
+      throw new Error('Detalhes do cartão são obrigatórios para pagamento com Cartão de Crédito.');
     }
-    orderPayload.charges = [
-      {
-        amount: { value: transaction.amountInCents },
-        payment_method: {
-          type: 'CREDIT_CARD',
-          installments: 1,
-          capture: true,
-          card: {
-            encrypted: paymentDetails.card.encryptedCard,
-            holder: {
-              name: paymentDetails.card.holderName,
-            },
+    orderPayload.charges = [{
+      amount: {
+        value: transaction.amountInCents,
+        currency: 'BRL' // <-- CORREÇÃO 3: Adicionando currency
+      },
+      payment_method: {
+        type: 'CREDIT_CARD',
+        installments: 1,
+        capture: true,
+        card: {
+          encrypted: paymentDetails.card.encryptedCard,
+          holder: {
+            name: paymentDetails.card.holderName,
           },
         },
       },
-    ];
-  } else {
+    }];
+  }
+  else {
     throw new Error('Método de pagamento inválido. Use "PIX" ou "CREDIT_CARD".');
   }
 
   try {
-    console.log(`--- ENVIANDO PARA PAGBANK (${isProduction ? 'PRODUÇÃO' : 'SANDBOX'}) ---`);
+    // CORREÇÃO 4: Alterando logs para refletir o ambiente de PRODUÇÃO
+    console.log("--- ENVIANDO PARA PAGBANK (PRODUÇÃO) ---");
     console.log(JSON.stringify(orderPayload, null, 2));
 
     const response = await pagbankAPI.post('/orders', orderPayload);
 
-    console.log(`--- RESPOSTA DO PAGBANK (${isProduction ? 'PRODUÇÃO' : 'SANDBOX'}) ---`);
+    console.log("--- RESPOSTA DO PAGBANK (PRODUÇÃO) ---");
     console.log(JSON.stringify(response.data, null, 2));
 
-    return {
+    const responseForFrontend = {
       ...response.data,
-      internalTransactionId: transaction.id,
+      internalTransactionId: transaction.id
     };
+
+    return responseForFrontend;
+
   } catch (error) {
-    console.error(`--- ERRO NA API DO PAGBANK (${isProduction ? 'PRODUÇÃO' : 'SANDBOX'}) ---`);
+    // CORREÇÃO 5: Alterando logs de erro para refletir o ambiente de PRODUÇÃO
+    console.error("--- ERRO NA API DO PAGBANK (PRODUÇÃO) ---");
     console.error(JSON.stringify(error.response ? error.response.data : error.message, null, 2));
     throw error;
   }

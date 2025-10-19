@@ -1,4 +1,5 @@
 // backend/server.js (VERSÃO FINAL E CORRETA)
+// --- ATUALIZADO PARA INCLUIR DADOS DE LIKE/FOLLOW NO LOGIN ---
 
 require('dotenv').config();
 
@@ -17,26 +18,24 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const pimentaRoutes = require('./routes/pimentaRoutes');
 const liveRoutes = require('./routes/liveRoutes');
 const productRoutes = require('./routes/productRoutes');
-const mediaRoutes = require('./routes/mediaRoutes'); // Rota da marca d'água
+const mediaRoutes = require('./routes/mediaRoutes');
+const interactionRoutes = require('./routes/interactionRoutes');
 
 // Middlewares
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
 
-// 🔔 Webhook PagBank (precisa vir ANTES do express.json())
+// Webhook PagBank
 const pagbankWebhook = require('./webhooks/pagbankWebhook');
 
 const app = express();
 const port = process.env.PORT || 3333;
 
-// Render/Proxy: habilita X-Forwarded-* corretamente (cookies, secure, etc.)
 app.set('trust proxy', 1);
 
 // ======================
 // 1) MONTA O WEBHOOK AQUI
 // ======================
-// ⚠️ O pagbankWebhook já usa express.raw internamente.
-//    Ele precisa ser montado antes de qualquer body parser JSON global.
 app.use(pagbankWebhook);
 
 // ======================
@@ -63,7 +62,6 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// Parsers globais (depois do webhook)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -88,18 +86,35 @@ const io = new Server(server, {
 // ======================
 // 5) ROTAS PROTEGIDAS
 // ======================
-app.use('/api/media', mediaRoutes); // pública ou protegida? (mantive como estava)
+app.use('/api/media', mediaRoutes);
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
 app.use('/api/lives', authMiddleware, updateLastSeen, liveRoutes(io));
+app.use('/api/interactions', authMiddleware, updateLastSeen, interactionRoutes);
 
+// --- ESTE ENDPOINT FOI MODIFICADO ---
 // Endpoint de perfil do usuário autenticado
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
-    const fullUser = await prisma.user.findUnique({ where: { id: req.user.userId } });
+    // Agora buscamos o usuário E suas relações de "seguir" e "curtir"
+    const fullUser = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      include: {
+        // Inclui um array 'following' com os IDs de quem o usuário segue
+        following: {
+          select: { followingId: true }
+        },
+        // Inclui um array 'likesGiven' com os IDs de quem o usuário curtiu
+        likesGiven: {
+          select: { likedUserId: true }
+        }
+      }
+    });
+
     if (!fullUser) return res.status(404).json({ message: 'Usuário não encontrado.' });
+    
     const { password, ...userWithoutPassword } = fullUser;
     res.status(200).json(userWithoutPassword);
   } catch (error) {
@@ -107,6 +122,7 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Erro interno do servidor." });
   }
 });
+// --- FIM DA MODIFICAÇÃO ---
 
 // Chat (Socket.IO)
 io.on('connection', (socket) => {

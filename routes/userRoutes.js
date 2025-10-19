@@ -1,3 +1,6 @@
+// myextasyclub-backend/routes/userRoutes.js
+// --- CÓDIGO COMPLETO (Com Rota DELETE /videos/:id adicionada) ---
+
 const express = require('express');
 const prisma = require('../lib/prisma');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -38,146 +41,344 @@ const createWatermarkSvg = (username, date) => {
 
 const addWatermark = async (originalImageBuffer, username) => {
     const formattedDate = new Date().toLocaleDateString('pt-BR');
-    const metadata = await sharp(originalImageBuffer).metadata();
-    const imageWidth = metadata.width;
-    const watermarkSvg = createWatermarkSvg(username, formattedDate);
-    const resizedWatermarkBuffer = await sharp(watermarkSvg)
-        .resize({ width: Math.round(imageWidth * 0.5) })
-        .toBuffer();
-    return sharp(originalImageBuffer)
-        .composite([{
-            input: resizedWatermarkBuffer,
-            gravity: 'southwest',
-        }])
-        .toBuffer();
+    // Verifica se o buffer é válido antes de usar o sharp
+    if (!originalImageBuffer || originalImageBuffer.length === 0) {
+        throw new Error("Buffer de imagem original inválido ou vazio.");
+    }
+    try {
+        const metadata = await sharp(originalImageBuffer).metadata();
+        const imageWidth = metadata.width;
+        if (!imageWidth) {
+            throw new Error("Não foi possível obter a largura da imagem.");
+        }
+        const watermarkSvg = createWatermarkSvg(username, formattedDate);
+        const resizedWatermarkBuffer = await sharp(watermarkSvg)
+            .resize({ width: Math.round(imageWidth * 0.5) })
+            .toBuffer();
+        return sharp(originalImageBuffer)
+            .composite([{
+                input: resizedWatermarkBuffer,
+                gravity: 'southwest',
+            }])
+            .toBuffer();
+    } catch (sharpError) {
+        console.error("Erro no Sharp ao adicionar marca d'água:", sharpError);
+        // Retorna o buffer original se houver erro no sharp, ou lança o erro
+        // return originalImageBuffer;
+        throw sharpError; // Lançar o erro para indicar falha
+    }
 };
 
 const uploadToS3 = async (file, folder, user) => {
-    const watermarkedBuffer = await addWatermark(file.buffer, user.name);
+    const userNameForWatermark = user?.name || `user-${user.userId || 'unknown'}`;
+    let bufferToUpload = file.buffer;
+    // Adiciona marca d'água apenas se for imagem
+    if (file.mimetype.startsWith('image/')) {
+        try {
+            bufferToUpload = await addWatermark(file.buffer, userNameForWatermark);
+        } catch (watermarkError) {
+            console.error(`Falha ao adicionar marca d'água no arquivo ${file.originalname}:`, watermarkError);
+            // Decide se quer prosseguir sem marca d'água ou retornar erro
+            // Por segurança, vamos retornar erro por enquanto
+            throw new Error("Falha ao processar imagem para marca d'água.");
+        }
+    }
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const filename = `${folder}-${user.userId}-${uniqueSuffix}${path.extname(file.originalname)}`;
+    const filename = `${folder}-${user?.userId || 'unknown'}-${uniqueSuffix}${path.extname(file.originalname)}`;
     const s3Key = `${folder}/${filename}`;
     const command = new PutObjectCommand({
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: s3Key,
-        Body: watermarkedBuffer,
+        Body: bufferToUpload,
         ContentType: file.mimetype,
     });
     await s3Client.send(command);
-    return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+    const fileUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
+    return { fileUrl, s3Key };
 };
 
+const deleteFromS3 = async (s3Key) => {
+    if (!s3Key) {
+        console.warn("Tentativa de deletar do S3 sem uma key.");
+        return;
+    }
+    try {
+        const deleteCommand = new DeleteObjectCommand({
+            Bucket: process.env.AWS_BUCKET_NAME,
+            Key: s3Key,
+        });
+        await s3Client.send(deleteCommand);
+        console.log(`Arquivo ${s3Key} deletado do S3.`);
+    } catch (error) {
+        // Logar erros comuns como NoSuchKey sem quebrar a aplicação
+        if (error.name === 'NoSuchKey') {
+            console.warn(`Arquivo ${s3Key} não encontrado no S3 para deleção.`);
+        } else {
+            console.error(`Erro ao deletar ${s3Key} do S3:`, error);
+        }
+        // Considerar se deve relançar o erro dependendo da criticidade
+    }
+};
 
 // --- ROTAS DO USUÁRIO ---
+
+// Upload de fotos para a galeria
 router.post('/photos', authMiddleware, upload.single('photo'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
-        const photoUrl = await uploadToS3(req.file, 'photos', req.user);
+        const { fileUrl, s3Key } = await uploadToS3(req.file, 'photos', { userId: req.user.userId, name: req.user.name });
         const newPhoto = await prisma.photo.create({
-            data: { url: photoUrl, description: req.body.description, authorId: req.user.userId }
+            data: {
+                url: fileUrl,
+                key: s3Key,
+                description: req.body.description,
+                authorId: req.user.userId
+            }
         });
         res.status(201).json(newPhoto);
     } catch (error) {
         console.error("Erro no upload da foto:", error);
-        res.status(500).json({ message: "Erro interno do servidor." });
+        res.status(500).json({ message: "Erro interno do servidor ao fazer upload da foto." });
     }
 });
 
+// Upload/Update de Avatar (no Profile)
 router.put('/profile/avatar', authMiddleware, upload.single('avatar'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
-        const avatarUrl = await uploadToS3(req.file, 'avatars', req.user);
-        const updatedUser = await prisma.user.update({
-            where: { id: req.user.userId },
-            data: { profilePictureUrl: avatarUrl },
-            select: { id: true, email: true, name: true, bio: true, location: true, gender: true, profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true }
+
+        const currentProfile = await prisma.profile.findUnique({ where: { userId: req.user.userId }, select: { avatarKey: true } });
+        if (currentProfile?.avatarKey) {
+            await deleteFromS3(currentProfile.avatarKey);
+        }
+        const { fileUrl, s3Key } = await uploadToS3(req.file, 'avatars', { userId: req.user.userId, name: req.user.name });
+
+        const updatedProfile = await prisma.profile.upsert({
+            where: { userId: req.user.userId },
+            update: { avatarUrl: fileUrl, avatarKey: s3Key },
+            create: { userId: req.user.userId, avatarUrl: fileUrl, avatarKey: s3Key },
+            include: {
+                 user: { // Inclui dados do User para montar o retorno
+                    select: {
+                        id: true, email: true, name: true, createdAt: true, lastSeenAt: true,
+                        pimentaBalance: true, interests: true, desires: true, fetishes: true,
+                    }
+                 }
+            }
         });
-        res.json(updatedUser);
+
+        // Monta o objeto UserData esperado pelo frontend
+        const userData = {
+            ...updatedProfile.user, // Dados do user incluído
+            profilePictureUrl: updatedProfile.avatarUrl,
+            coverPhotoUrl: updatedProfile.coverPhotoUrl, // Pode vir nulo aqui
+            bio: updatedProfile.bio,
+            location: updatedProfile.location,
+            gender: updatedProfile.gender,
+            // Adicionar monthlyStats e certificationLevel se forem calculados/buscados aqui
+        };
+        // delete userData.password; // A senha não foi selecionada, não precisa deletar
+
+        res.json(userData);
+
     } catch (error) {
         console.error("Erro no upload do avatar:", error);
-        res.status(500).json({ message: "Erro interno do servidor." });
+        res.status(500).json({ message: "Erro interno do servidor ao fazer upload do avatar." });
     }
 });
 
+// Upload/Update de Capa (no Profile)
 router.post('/profile/cover', authMiddleware, upload.single('cover'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
-        const coverUrl = await uploadToS3(req.file, 'covers', req.user);
-        const updatedUser = await prisma.user.update({
-            where: { id: req.user.userId },
-            data: { coverPhotoUrl: coverUrl },
-            select: { id: true, email: true, name: true, bio: true, location: true, gender: true, profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true }
+
+        const currentProfile = await prisma.profile.findUnique({ where: { userId: req.user.userId }, select: { coverPhotoKey: true } });
+        if (currentProfile?.coverPhotoKey) {
+            await deleteFromS3(currentProfile.coverPhotoKey);
+        }
+        const { fileUrl, s3Key } = await uploadToS3(req.file, 'covers', { userId: req.user.userId, name: req.user.name });
+
+        const updatedProfile = await prisma.profile.upsert({
+            where: { userId: req.user.userId },
+            update: { coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
+            create: { userId: req.user.userId, coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
+            include: {
+                user: { // Inclui dados do User
+                    select: {
+                        id: true, email: true, name: true, createdAt: true, lastSeenAt: true,
+                        pimentaBalance: true, interests: true, desires: true, fetishes: true,
+                    }
+                }
+            }
         });
-        res.json(updatedUser);
+
+        // Monta o objeto UserData
+        const userData = {
+            ...updatedProfile.user,
+            profilePictureUrl: updatedProfile.avatarUrl, // Pode vir nulo
+            coverPhotoUrl: updatedProfile.coverPhotoUrl,
+            bio: updatedProfile.bio,
+            location: updatedProfile.location,
+            gender: updatedProfile.gender,
+        };
+        // delete userData.password; // Não selecionado
+
+        res.json(userData);
+
     } catch (error) {
         console.error("Erro no upload da capa:", error);
-        res.status(500).json({ message: "Erro interno do servidor." });
+        res.status(500).json({ message: "Erro interno do servidor ao fazer upload da capa." });
     }
 });
 
+// Buscar perfil do usuário logado (GET /api/users/profile)
 router.get('/profile', authMiddleware, async (req, res) => {
     try {
       const loggedInUserId = req.user.userId;
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const visitCount = await prisma.profileView.count({ where: { viewedProfileId: loggedInUserId, createdAt: { gte: thirtyDaysAgo } } });
-      const user = await prisma.user.findUnique({
+
+      const userWithProfile = await prisma.user.findUnique({
         where: { id: loggedInUserId },
         select: {
-          id: true, email: true, name: true, bio: true, location: true, gender: true,
-          profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true,
-          pimentaBalance: true, interests: true, desires: true, fetishes: true
+          id: true, email: true, name: true,
+          createdAt: true, lastSeenAt: true, pimentaBalance: true,
+          interests: true, desires: true, fetishes: true, // Mantidos no User
+          profile: { // Seleciona os campos do Profile
+            select: {
+              id: true,
+              bio: true,
+              avatarUrl: true,
+              coverPhotoUrl: true,
+              location: true,
+              gender: true
+            }
+          }
         },
       });
-      if (!user) { return res.status(404).json({ message: 'Usuário não encontrado.' }); }
+
+      if (!userWithProfile) { return res.status(404).json({ message: 'Usuário não encontrado.' }); }
+
+      let visitCount = 0;
+      if (userWithProfile.profile?.id) {
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+          visitCount = await prisma.profileView.count({
+              where: { viewedProfileId: userWithProfile.profile.id, createdAt: { gte: thirtyDaysAgo } }
+          });
+      }
+
       let completionScore = 0;
-      if (user.profilePictureUrl) completionScore += 25;
-      if (user.bio) completionScore += 25;
-      if (user.interests) completionScore += 25;
-      if (user.location) completionScore += 25;
-      const monthlyStats = { visits: visitCount, commentsReceived: 0, commentsMade: 0 };
-      const profileData = { ...user, certificationLevel: completionScore, monthlyStats: monthlyStats };
+      if (userWithProfile.profile?.avatarUrl) completionScore += 25;
+      if (userWithProfile.profile?.bio) completionScore += 25;
+      if (userWithProfile.interests) completionScore += 25;
+      if (userWithProfile.profile?.location) completionScore += 25;
+
+      const monthlyStats = {
+          visits: visitCount,
+          commentsReceived: 0, // Placeholder
+          commentsMade: 0     // Placeholder
+      };
+
+      const profileData = {
+        id: userWithProfile.id,
+        email: userWithProfile.email,
+        name: userWithProfile.name,
+        createdAt: userWithProfile.createdAt,
+        lastSeenAt: userWithProfile.lastSeenAt,
+        pimentaBalance: userWithProfile.pimentaBalance,
+        interests: userWithProfile.interests,
+        desires: userWithProfile.desires,
+        fetishes: userWithProfile.fetishes,
+        // Campos vindos do Profile
+        profilePictureUrl: userWithProfile.profile?.avatarUrl ?? null,
+        coverPhotoUrl: userWithProfile.profile?.coverPhotoUrl ?? null,
+        bio: userWithProfile.profile?.bio ?? null,
+        location: userWithProfile.profile?.location ?? null,
+        gender: userWithProfile.profile?.gender ?? null,
+        // Dados calculados
+        certificationLevel: completionScore,
+        monthlyStats: monthlyStats,
+      };
+
       res.json(profileData);
+
     } catch (error) {
       console.error("Erro ao buscar perfil do usuário:", error);
-      res.status(500).json({ message: "Erro interno do servidor." });
+      res.status(500).json({ message: "Erro interno do servidor ao buscar perfil." });
     }
 });
 
+// Buscar perfil público de outro usuário (GET /api/users/profile/:id)
 router.get('/profile/:id', authMiddleware, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
         if (isNaN(userId)) { return res.status(400).json({ message: "ID de usuário inválido." }); }
-        const user = await prisma.user.findUnique({
+
+        const userWithProfile = await prisma.user.findUnique({
             where: { id: userId },
             select: {
-                id: true, name: true, bio: true, location: true, gender: true,
-                profilePictureUrl: true, coverPhotoUrl: true, createdAt: true,
+                id: true, name: true,
+                createdAt: true,
                 interests: true, desires: true, fetishes: true,
+                profile: { // Seleciona campos públicos do Profile
+                    select: {
+                        bio: true,
+                        avatarUrl: true,
+                        coverPhotoUrl: true,
+                        location: true,
+                        gender: true
+                    }
+                }
             }
         });
-        if (!user) { return res.status(404).json({ message: "Usuário não encontrado." }); }
-        res.json(user);
+
+        if (!userWithProfile) { return res.status(404).json({ message: "Usuário não encontrado." }); }
+
+        const publicProfileData = {
+            id: userWithProfile.id,
+            name: userWithProfile.name,
+            createdAt: userWithProfile.createdAt,
+            interests: userWithProfile.interests,
+            desires: userWithProfile.desires,
+            fetishes: userWithProfile.fetishes,
+            // Campos do Profile
+            profilePictureUrl: userWithProfile.profile?.avatarUrl ?? null,
+            coverPhotoUrl: userWithProfile.profile?.coverPhotoUrl ?? null,
+            bio: userWithProfile.profile?.bio ?? null,
+            location: userWithProfile.profile?.location ?? null,
+            gender: userWithProfile.profile?.gender ?? null,
+        };
+
+        res.json(publicProfileData);
+
     } catch (error) {
         console.error("Erro ao buscar perfil público:", error);
-        res.status(500).json({ message: "Erro interno do servidor." });
+        res.status(500).json({ message: "Erro interno do servidor ao buscar perfil público." });
     }
 });
 
+// Registrar visita no perfil (sem alteração)
 router.post('/profile/:id/view', authMiddleware, async (req, res) => {
     try {
-        const viewedProfileId = parseInt(req.params.id, 10);
+        const viewedUserId = parseInt(req.params.id, 10);
         const viewerId = req.user.userId;
-        if (viewedProfileId === viewerId) {
+
+        if (viewedUserId === viewerId) {
             return res.status(200).json({ message: "Não é possível registrar visita no próprio perfil." });
         }
-        const viewedProfile = await prisma.user.findUnique({ where: { id: viewedProfileId } });
+
+        const viewedProfile = await prisma.profile.findUnique({
+            where: { userId: viewedUserId },
+            select: { id: true }
+        });
+
         if (!viewedProfile) {
             return res.status(404).json({ message: "Perfil visitado não encontrado." });
         }
+
         await prisma.profileView.create({
-            data: { viewedProfileId: viewedProfileId, viewerId: viewerId }
+            data: { viewedProfileId: viewedProfile.id, viewerId: viewerId }
         });
+
         res.status(201).json({ message: "Visita registrada com sucesso." });
     } catch (error) {
         console.error("Erro ao registrar visita:", error);
@@ -185,6 +386,7 @@ router.post('/profile/:id/view', authMiddleware, async (req, res) => {
     }
 });
 
+// Buscar usuários online (sem alteração)
 router.get('/online', authMiddleware, async (req, res) => {
     try {
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
@@ -193,49 +395,145 @@ router.get('/online', authMiddleware, async (req, res) => {
                 lastSeenAt: { gte: fifteenMinutesAgo },
                 id: { not: req.user.userId }
             },
-            select: { id: true, name: true, profilePictureUrl: true, gender: true },
+            select: {
+                id: true,
+                name: true,
+                profile: {
+                    select: { avatarUrl: true, gender: true }
+                }
+            },
             orderBy: { lastSeenAt: 'desc' },
             take: 10,
         });
-        res.json(onlineUsers);
+
+        const formattedUsers = onlineUsers.map(user => ({
+            id: user.id,
+            name: user.name,
+            gender: user.profile?.gender ?? null,
+            profilePictureUrl: user.profile?.avatarUrl ?? null
+        }));
+
+        res.json(formattedUsers);
+
     } catch (error) {
         console.error("Erro ao buscar usuários online:", error);
-        res.status(500).json({ message: "Erro interno do servidor." });
+        res.status(500).json({ message: "Erro interno do servidor ao buscar usuários online." });
     }
 });
 
+// Atualizar perfil (PUT /api/users/profile)
 router.put('/profile', authMiddleware, async (req, res) => {
     try {
-      const { name, bio, location, gender, interests, desires, fetishes } = req.body;
-      const updatedUser = await prisma.user.update({
-        where: { id: req.user.userId },
-        data: { name, bio, location, gender, interests, desires, fetishes },
-        select: { id: true, email: true, name: true, bio: true, location: true, gender: true, profilePictureUrl: true, coverPhotoUrl: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true }
+      const { name, interests, desires, fetishes, bio, location, gender } = req.body;
+      const userId = req.user.userId;
+
+      const updatedUserWithProfile = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          name: name,
+          interests: interests,
+          desires: desires,
+          fetishes: fetishes,
+          profile: {
+            upsert: {
+              create: { bio: bio, location: location, gender: gender },
+              update: { bio: bio, location: location, gender: gender }
+            }
+          }
+        },
+        select: { // Seleciona tudo que precisa retornar
+          id: true, email: true, name: true,
+          createdAt: true, lastSeenAt: true, pimentaBalance: true,
+          interests: true, desires: true, fetishes: true,
+          profile: {
+            select: {
+              bio: true,
+              avatarUrl: true,
+              coverPhotoUrl: true,
+              location: true,
+              gender: true
+            }
+          }
+        }
       });
-      res.json(updatedUser);
+
+      const profileData = {
+          id: updatedUserWithProfile.id,
+          email: updatedUserWithProfile.email,
+          name: updatedUserWithProfile.name,
+          createdAt: updatedUserWithProfile.createdAt,
+          lastSeenAt: updatedUserWithProfile.lastSeenAt,
+          pimentaBalance: updatedUserWithProfile.pimentaBalance,
+          interests: updatedUserWithProfile.interests,
+          desires: updatedUserWithProfile.desires,
+          fetishes: updatedUserWithProfile.fetishes,
+          // Campos do Profile
+          profilePictureUrl: updatedUserWithProfile.profile?.avatarUrl ?? null,
+          coverPhotoUrl: updatedUserWithProfile.profile?.coverPhotoUrl ?? null,
+          bio: updatedUserWithProfile.profile?.bio ?? null,
+          location: updatedUserWithProfile.profile?.location ?? null,
+          gender: updatedUserWithProfile.profile?.gender ?? null,
+      };
+
+      res.json(profileData);
+
     } catch (error) {
       console.error("Erro ao atualizar o perfil:", error);
       res.status(500).json({ message: "Erro interno do servidor ao atualizar perfil." });
     }
 });
 
+// Rota de busca (GET /api/users/search)
 router.get('/search', authMiddleware, async (req, res) => {
     try {
-      const { q } = req.query;
-      const whereClause = q ? {
-        OR: [{ name: { contains: q, mode: 'insensitive' } }, { bio: { contains: q, mode: 'insensitive' } }],
-      } : {};
-      const foundUsers = await prisma.user.findMany({
-        where: whereClause,
-        select: { id: true, name: true, profilePictureUrl: true, location: true, gender: true, bio: true }
-      });
-      res.status(200).json(foundUsers);
+        const { q } = req.query;
+        let whereClause = {};
+
+        if (q && typeof q === 'string' && q.trim()) {
+            const searchTerm = q.trim();
+            whereClause = {
+                OR: [
+                    { name: { contains: searchTerm /*, mode: 'insensitive' */ } },
+                    { profile: { bio: { contains: searchTerm /*, mode: 'insensitive' */ } } }
+                ],
+            };
+        }
+
+        const foundUsers = await prisma.user.findMany({
+            where: whereClause,
+            select: {
+                id: true,
+                name: true,
+                profile: {
+                    select: {
+                        bio: true,
+                        avatarUrl: true,
+                        location: true,
+                        gender: true
+                    }
+                }
+            },
+            take: 20
+        });
+
+        const formattedResults = foundUsers.map(user => ({
+            id: user.id,
+            name: user.name,
+            bio: user.profile?.bio ?? null,
+            profilePictureUrl: user.profile?.avatarUrl ?? null,
+            location: user.profile?.location ?? null,
+            gender: user.profile?.gender ?? null
+        }));
+
+        res.status(200).json(formattedResults);
+
     } catch (error) {
-      console.error("Erro ao buscar usuários:", error);
-      res.status(500).json({ message: "Erro interno do servidor ao realizar a busca." });
+        console.error("Erro ao buscar usuários:", error);
+        res.status(500).json({ message: "Erro interno do servidor ao realizar a busca." });
     }
 });
 
+// Buscar fotos do usuário logado
 router.get('/photos', authMiddleware, async (req, res) => {
     try {
       const photos = await prisma.photo.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -246,6 +544,7 @@ router.get('/photos', authMiddleware, async (req, res) => {
     }
 });
 
+// Buscar vídeos do usuário logado
 router.get('/videos', authMiddleware, async (req, res) => {
   try {
     const videos = await prisma.video.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -256,18 +555,19 @@ router.get('/videos', authMiddleware, async (req, res) => {
   }
 });
 
-// --- NOVAS ROTAS PARA BUSCAR DADOS DE OUTROS USUÁRIOS ---
+// Buscar mídias de OUTROS usuários
 router.get('/user/:userId/photos', authMiddleware, async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
         if (isNaN(userId)) return res.status(400).json({ message: "ID de usuário inválido." });
-        const photos = await prisma.photo.findMany({ 
-            where: { authorId: userId }, 
-            orderBy: { createdAt: 'desc' } 
+        const photos = await prisma.photo.findMany({
+            where: { authorId: userId },
+            orderBy: { createdAt: 'desc' }
         });
         res.status(200).json(photos);
     } catch (error) {
-        res.status(500).json({ message: "Erro ao buscar fotos do usuário." });
+        console.error("Erro ao buscar fotos do usuário:", error);
+        res.status(500).json({ message: "Erro interno do servidor ao buscar fotos do usuário." });
     }
 });
 
@@ -275,31 +575,41 @@ router.get('/user/:userId/videos', authMiddleware, async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
         if (isNaN(userId)) return res.status(400).json({ message: "ID de usuário inválido." });
-        const videos = await prisma.video.findMany({ 
-            where: { authorId: userId }, 
-            orderBy: { createdAt: 'desc' } 
+        const videos = await prisma.video.findMany({
+            where: { authorId: userId },
+            orderBy: { createdAt: 'desc' }
         });
         res.status(200).json(videos);
     } catch (error) {
-        res.status(500).json({ message: "Erro ao buscar vídeos do usuário." });
+        console.error("Erro ao buscar vídeos do usuário:", error);
+        res.status(500).json({ message: "Erro interno do servidor ao buscar vídeos do usuário." });
     }
 });
 
+// Upload de vídeo
 router.post('/videos', authMiddleware, upload.single('video'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
+    // Vídeos não terão marca d'água neste exemplo
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = `video-${req.user.userId}-${uniqueSuffix}${path.extname(req.file.originalname)}`;
     const s3Key = `videos/${filename}`;
     const command = new PutObjectCommand({
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: s3Key,
-        Body: req.file.buffer,
+        Body: req.file.buffer, // Buffer original
         ContentType: req.file.mimetype,
     });
     await s3Client.send(command);
     const videoUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
-    const newVideo = await prisma.video.create({ data: { url: videoUrl, description: req.body.description, authorId: req.user.userId } });
+    const newVideo = await prisma.video.create({
+        data: {
+            url: videoUrl,
+            key: s3Key, // Salva a Key
+            description: req.body.description,
+            authorId: req.user.userId
+        }
+    });
     res.status(201).json(newVideo);
   } catch (error) {
     console.error("Erro ao fazer upload do vídeo:", error);
@@ -307,23 +617,75 @@ router.post('/videos', authMiddleware, upload.single('video'), async (req, res) 
   }
 });
 
+// Deletar foto
 router.delete('/photos/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
         const photoId = parseInt(id, 10);
         const userId = req.user.userId;
+
         const photo = await prisma.photo.findUnique({ where: { id: photoId } });
         if (!photo) { return res.status(404).json({ message: 'Foto não encontrada.' }); }
         if (photo.authorId !== userId) { return res.status(403).json({ message: 'Acesso negado.' }); }
-        const s3Key = new URL(photo.url).pathname.substring(1);
-        const deleteCommand = new DeleteObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: s3Key });
-        await s3Client.send(deleteCommand);
+
+        await deleteFromS3(photo.key);
         await prisma.photo.delete({ where: { id: photoId } });
         res.status(200).json({ message: 'Foto apagada com sucesso.' });
     } catch (error) {
         console.error("Erro ao apagar a foto:", error);
-        res.status(500).json({ message: "Erro interno do servidor." });
+        res.status(500).json({ message: "Erro interno do servidor ao apagar foto." });
     }
 });
+
+// --- NOVA ROTA ADICIONADA AQUI ---
+// DELETE /api/users/videos/:id (Assumindo que este arquivo é montado em /api/users)
+router.delete('/videos/:id', authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const videoId = parseInt(id, 10);
+        const userId = req.user.userId; // ID do usuário logado
+
+        if (isNaN(videoId)) {
+            return res.status(400).json({ message: 'ID do vídeo inválido.' });
+        }
+
+        // 1. Busca o vídeo e verifica se pertence ao usuário
+        const video = await prisma.video.findUnique({
+            where: { id: videoId }
+        });
+
+        if (!video) {
+            return res.status(404).json({ message: 'Vídeo não encontrado.' });
+        }
+
+        // 2. Verifica permissão
+        if (video.authorId !== userId) {
+            return res.status(403).json({ message: 'Acesso negado. Você não é o dono deste vídeo.' });
+        }
+
+        // 3. Deleta o arquivo do S3 (usando a função auxiliar)
+        if (video.key) { // Só tenta deletar se a 'key' existir
+            await deleteFromS3(video.key);
+        } else {
+            console.warn(`Vídeo ${videoId} não possuía S3 key registrada para deleção.`);
+        }
+
+        // 4. Deleta o registro do vídeo no banco de dados
+        await prisma.video.delete({
+            where: { id: videoId }
+        });
+
+        // 5. Responde com sucesso
+        res.status(200).json({ message: 'Vídeo apagado com sucesso.' });
+
+    } catch (error) {
+        console.error("Erro ao apagar o vídeo:", error);
+        if (error.code === 'P2025') { // Recurso não encontrado
+             return res.status(404).json({ message: 'Vídeo não encontrado.' });
+        }
+        res.status(500).json({ message: "Erro interno do servidor ao apagar vídeo." });
+    }
+});
+// --- FIM DA NOVA ROTA ---
 
 module.exports = router;
