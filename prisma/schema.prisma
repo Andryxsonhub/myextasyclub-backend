@@ -1,5 +1,5 @@
 // myextasyclub-backend/schema.prisma
-// --- CORRIGIDO: Adicionado @unique aos nomes de Plan e Package ---
+// --- ARQUIVO ATUALIZADO PARA MERCADOPAGO ---
 
 generator client {
   provider = "prisma-client-js"
@@ -10,55 +10,54 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ... (Todos os outros modelos - User, Profile, Photo, Video, etc. - permanecem iguais) ...
-
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  name      String?
-  password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               Int       @id @default(autoincrement())
+  email            String    @unique
+  name             String?
+  password         String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  profile          Profile?
+  photos           Photo[]
+  videos           Video[]
+  posts            Post[]
+  streams          LiveStream[]      @relation("Host")
+  transactions     Transaction[]
+  
+  // --- MUDANÇA AQUI ---
+  // Removemos as linhas antigas de subscriptionPlanId
+  // Adicionamos o link para a nova tabela de Assinatura ativa
+  subscription     Subscription?
+  // --- FIM DA MUDANÇA ---
 
-  profile Profile?
-  photos  Photo[]
-  videos  Video[]
-  posts   Post[]
+  viewedProfiles   ProfileView[]     @relation("Viewer")
+  likesGiven       Like[]            @relation("LikesGiven")
+  likesReceived    Like[]            @relation("LikesReceived")
+  following        Follow[]          @relation("Following")
+  followers        Follow[]          @relation("Followers")
+  interests        String?
+  desires          String?
+  fetishes         String?
+  lastSeenAt       DateTime?         @map("last_seen_at")
+  pimentaBalance   Int?              @default(0) @map("pimenta_balance")
 
-  streams LiveStream[] @relation("Host")
-
-  transactions       Transaction[]
-  subscription       SubscriptionPlan? @relation(fields: [subscriptionPlanId], references: [id])
-  subscriptionPlanId Int?
-
-  viewedProfiles ProfileView[] @relation("Viewer")
-
-  likesGiven    Like[]   @relation("LikesGiven")
-  likesReceived Like[]   @relation("LikesReceived")
-  following     Follow[] @relation("Following")
-  followers     Follow[] @relation("Followers")
-
-  interests String?
-  desires   String?
-  fetishes  String?
-  lastSeenAt DateTime? @map("last_seen_at")
-  pimentaBalance Int? @default(0) @map("pimenta_balance")
+  @@map("users")
 }
 
 model Profile {
-  id            Int     @id @default(autoincrement())
-  bio           String? @db.Text
-  coverPhotoUrl String? @map("cover_photo_url")
-  avatarUrl     String? @map("avatar_url")
+  id            Int           @id @default(autoincrement())
+  bio           String?       @db.Text
+  coverPhotoUrl String?       @map("cover_photo_url")
+  avatarUrl     String?       @map("avatar_url")
   location      String?
   gender        String?
-  avatarKey     String? @map("avatar_key")
-  coverPhotoKey String? @map("cover_photo_key")
+  avatarKey     String?       @map("avatar_key")
+  coverPhotoKey String?       @map("cover_photo_key")
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        Int           @unique
+  views         ProfileView[] @relation("ViewedProfile")
 
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId Int  @unique
-
-  views ProfileView[] @relation("ViewedProfile")
+  @@map("profiles")
 }
 
 model Photo {
@@ -67,9 +66,10 @@ model Photo {
   key         String?
   description String?
   createdAt   DateTime @default(now())
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId    Int      @map("author_id")
 
-  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorId Int  @map("author_id")
+  @@map("photos")
 }
 
 model Video {
@@ -78,18 +78,20 @@ model Video {
   key         String?
   description String?
   createdAt   DateTime @default(now())
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId    Int      @map("author_id")
 
-  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorId Int  @map("author_id")
+  @@map("videos")
 }
 
 model Post {
   id        Int      @id @default(autoincrement())
   content   String   @db.Text
   createdAt DateTime @default(now())
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  Int      @map("author_id")
 
-  author   User @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorId Int  @map("author_id")
+  @@map("posts")
 }
 
 model LiveStream {
@@ -99,81 +101,104 @@ model LiveStream {
   hostId    Int
   isActive  Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@map("live_streams")
 }
 
 model Transaction {
-  id              String   @id @default(cuid())
-  userId          Int
-  user            User     @relation(fields: [userId], references: [id])
-  productId       Int
-  productType     String
-  productName     String
-  amountInCents   Int
-  pagbankChargeId String   @unique
-  status          String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            String   @id @default(cuid())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id])
+  productId     Int
+  productType   String
+  productName   String
+  amountInCents Int
+  
+  // --- MUDANÇA AQUI ---
+  // Campo antigo do PagBank se torna opcional
+  pagbankChargeId      String?  @unique
+  // Novo campo para o MercadoPago
+  mercadopagoPaymentId String?  @unique
+  // --- FIM DA MUDANÇA ---
+
+  status        String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@map("transactions")
 }
 
-// --- CORREÇÃO AQUI ---
 model SubscriptionPlan {
-  id           Int    @id @default(autoincrement())
-  name         String @unique // <-- ADICIONADO @unique
+  id           Int            @id @default(autoincrement())
+  name         String         @unique
   priceInCents Int
-  users        User[]
+  // Esta relação agora aponta para o novo model Subscription
+  subscriptions Subscription[]
 
   @@map("subscription_plans")
 }
 
-// --- CORREÇÃO AQUI ---
 model PimentaPackage {
   id            Int    @id @default(autoincrement())
-  name          String @unique // <-- ADICIONADO @unique
+  name          String @unique
   pimentaAmount Int
   priceInCents  Int
 
   @@map("pimenta_packages")
 }
-// --- FIM DA CORREÇÃO ---
-
 
 model ProfileView {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-
-  viewer          User @relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
-  viewerId        Int  @map("viewer_id")
-
-  viewedProfile   Profile @relation("ViewedProfile", fields: [viewedProfileId], references: [id], onDelete: Cascade)
-  viewedProfileId Int     @map("viewed_profile_id")
+  id              Int      @id @default(autoincrement())
+  createdAt       DateTime @default(now())
+  viewer          User     @relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  viewerId        Int      @map("viewer_id")
+  viewedProfile   Profile  @relation("ViewedProfile", fields: [viewedProfileId], references: [id], onDelete: Cascade)
+  viewedProfileId Int      @map("viewed_profile_id")
 
   @@map("profile_views")
 }
 
 model Like {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
-
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
   liker       User     @relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
   likerId     Int
-
   likedUser   User     @relation("LikesReceived", fields: [likedUserId], references: [id], onDelete: Cascade)
   likedUserId Int
 
   @@unique([likerId, likedUserId])
+  @@map("likes")
 }
 
 model Follow {
   id          Int      @id @default(autoincrement())
   createdAt   DateTime @default(now())
-
   follower    User     @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
   followerId  Int
-
   following   User     @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
   followingId Int
 
   @@unique([followerId, followingId])
+  @@map("follows")
 }
+
+// --- NOVO MODEL ADICIONADO ---
+// Tabela para guardar o STATUS da assinatura de um usuário
+model Subscription {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique // Garante que o usuário só tenha 1 assinatura ativa
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  planId    Int
+  plan      SubscriptionPlan @relation(fields: [planId], references: [id])
+  
+  mercadopagoSubscriptionId String   @unique // ID da assinatura lá no MercadoPago
+  status                    String   // Ex: "active", "paused", "cancelled"
+  expiresAt                 DateTime // Quando a assinatura expira
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("subscriptions")
+}
+// --- FIM DO NOVO MODEL ---

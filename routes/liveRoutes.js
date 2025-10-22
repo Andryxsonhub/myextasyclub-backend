@@ -124,7 +124,7 @@ module.exports = function(io) {
 
         // Gera o token JWT
         const token = at.toJwt();
-        const wsUrl = process.env.LIVEKIT_WS_URL; // URL do seu servidor LiveKit
+        const wsUrl = process.env.LIVEKIT_URL; // URL do seu servidor LiveKit
 
         console.log(`Token gerado para usuário ${userId} entrar na sala ${roomName}. Permissões: publish=${canPublish}`);
 

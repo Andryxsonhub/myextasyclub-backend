@@ -1,5 +1,5 @@
-// backend/server.js (VERSÃO FINAL E CORRETA)
-// --- ATUALIZADO PARA INCLUIR DADOS DE LIKE/FOLLOW NO LOGIN ---
+// backend/server.js
+// --- ATUALIZADO PARA WEBHOOKS DO MERCADOPAGO ---
 
 require('dotenv').config();
 
@@ -14,7 +14,7 @@ const prisma = require('./lib/prisma');
 const userRoutes = require('./routes/userRoutes');
 const authRoutes = require('./routes/authRoutes');
 const postRoutes = require('./routes/postRoutes');
-const paymentRoutes = require('./routes/paymentRoutes');
+const paymentRoutes = require('./routes/paymentRoutes'); // (Rotas protegidas)
 const pimentaRoutes = require('./routes/pimentaRoutes');
 const liveRoutes = require('./routes/liveRoutes');
 const productRoutes = require('./routes/productRoutes');
@@ -25,8 +25,12 @@ const interactionRoutes = require('./routes/interactionRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
 
-// Webhook PagBank
-const pagbankWebhook = require('./webhooks/pagbankWebhook');
+// Webhook PagBank (Comentado)
+// const pagbankWebhook = require('./webhooks/pagbankWebhook');
+
+// --- NOVO ---
+// Webhook MercadoPago (Rotas públicas)
+const mercadopagoWebhook = require('./webhooks/mercadopagoWebhook');
 
 const app = express();
 const port = process.env.PORT || 3333;
@@ -34,12 +38,8 @@ const port = process.env.PORT || 3333;
 app.set('trust proxy', 1);
 
 // ======================
-// 1) MONTA O WEBHOOK AQUI
-// ======================
-app.use(pagbankWebhook);
-
-// ======================
-// 2) DEMAIS PARSERS E CORS
+// 1) CORS E PARSERS (BODY PARSERS)
+// (Movido para cima. Deve vir ANTES de TODAS as rotas)
 // ======================
 const allowedOrigins = [
   'http://localhost:5173',
@@ -62,17 +62,28 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json()); // <-- Essencial para o webhook ler o req.body
 app.use(express.urlencoded({ extended: true }));
 
+
 // ======================
-// 3) ROTAS PÚBLICAS
+// 2) ROTAS PÚBLICAS (WEBHOOKS E AUTENTICAÇÃO)
 // ======================
+// Webhook PagBank (Desativado)
+// app.use(pagbankWebhook);
+
+// --- NOVO ---
+// Webhook MercadoPago (Público, sem authMiddleware)
+// O prefixo /api/payments + /webhook-mercadopago (do arquivo)
+// forma: /api/payments/webhook-mercadopago
+app.use('/api/payments', mercadopagoWebhook);
+
+// Rotas públicas de autenticação e produtos
 app.use('/api', authRoutes);
 app.use('/api/products', productRoutes);
 
 // ======================
-// 4) SOCKET.IO
+// 3) SOCKET.IO
 // ======================
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -84,29 +95,32 @@ const io = new Server(server, {
 });
 
 // ======================
-// 5) ROTAS PROTEGIDAS
+// 4) ROTAS PROTEGIDAS (Exigem Login)
 // ======================
 app.use('/api/media', mediaRoutes);
 app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
+
+// --- ATUALIZADO ---
+// Estas são as rotas PROTEGIDAS de pagamento (ex: /create-pimenta-checkout)
+// Elas usam o mesmo prefixo /api/payments, mas como vêm DEPOIS
+// do webhook, o Express aplica o authMiddleware corretamente.
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
+
 app.use('/api/lives', authMiddleware, updateLastSeen, liveRoutes(io));
 app.use('/api/interactions', authMiddleware, updateLastSeen, interactionRoutes);
 
-// --- ESTE ENDPOINT FOI MODIFICADO ---
+
 // Endpoint de perfil do usuário autenticado
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   try {
-    // Agora buscamos o usuário E suas relações de "seguir" e "curtir"
     const fullUser = await prisma.user.findUnique({
       where: { id: req.user.userId },
       include: {
-        // Inclui um array 'following' com os IDs de quem o usuário segue
         following: {
           select: { followingId: true }
         },
-        // Inclui um array 'likesGiven' com os IDs de quem o usuário curtiu
         likesGiven: {
           select: { likedUserId: true }
         }
@@ -122,7 +136,6 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Erro interno do servidor." });
   }
 });
-// --- FIM DA MODIFICAÇÃO ---
 
 // Chat (Socket.IO)
 io.on('connection', (socket) => {
@@ -133,7 +146,7 @@ io.on('connection', (socket) => {
 });
 
 // ======================
-// 6) START
+// 5) START
 // ======================
 server.listen(port, () => {
   console.log(`✅ Servidor backend rodando na porta ${port}`);
