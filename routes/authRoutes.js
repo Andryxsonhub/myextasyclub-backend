@@ -1,4 +1,4 @@
-// routes/authRoutes.js (VERSÃO COMPLETA com /register)
+// routes/authRoutes.js (VERSÃO COM LOGS E RESPOSTA SIMPLIFICADA)
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -12,38 +12,32 @@ router.get('/health', (req, res) => {
 });
 
 // ==========================================================
-// ROTA DE LOGIN (Existente)
+// ROTA DE LOGIN (Existente - Sem alteração)
 // ==========================================================
-/**
- * POST /api/login
- * body: { email, password }
- */
 router.post('/login', async (req, res) => {
   try {
-    // 1) valida body
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ message: 'Informe e-mail e senha.' });
     }
-
-    // 2) busca usuário
+    console.log('[LOGIN] Buscando usuário:', email); // Log
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      // não revela se o email existe
+      console.log('[LOGIN] Usuário não encontrado:', email); // Log
       return res.status(401).json({ message: 'Credenciais inválidas.' });
     }
-
-    // 3) confere senha
+    console.log('[LOGIN] Comparando senha para:', email); // Log
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
+       console.log('[LOGIN] Senha inválida para:', email); // Log
       return res.status(401).json({ message: 'Credenciais inválidas.' });
     }
-
-    // 4) gera token
+    console.log('[LOGIN] Gerando token para:', user.id); // Log
     const payload = { userId: user.id, email: user.email };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-    // 5) devolve dados essenciais (incluindo like/follow para o frontend)
+    // Busca com relações (sem alteração)
+    console.log('[LOGIN] Buscando usuário com relações:', user.id); // Log
     const userWithRelations = await prisma.user.findUnique({
         where: { id: user.id },
         include: {
@@ -53,72 +47,76 @@ router.post('/login', async (req, res) => {
     });
 
     const { password: _, ...safeUser } = userWithRelations;
+    console.log('[LOGIN] Login bem-sucedido para:', email); // Log
     return res.status(200).json({ token, user: safeUser });
 
   } catch (err) {
-    console.error('[LOGIN_ERR]', err?.message || err);
+    console.error('[LOGIN_ERR]', err); // Log de erro completo
     return res.status(500).json({ message: 'Erro interno ao efetuar login.' });
   }
 });
 
 // ==========================================================
-// ROTA DE REGISTRO (Nova - Adicionada)
+// ROTA DE REGISTRO (LOGS ADICIONADOS, RESPOSTA SIMPLIFICADA)
 // ==========================================================
-/**
- * POST /api/register
- * body: { email, password, name } // Adicione outros campos se necessário
- */
 router.post('/register', async (req, res) => {
   try {
-    // 1) Valida o corpo da requisição
+    console.log('[REGISTER] Recebido body:', req.body); // Log
     const { email, password, name } = req.body || {};
     if (!email || !password || !name) {
       return res.status(400).json({ message: 'E-mail, senha e nome são obrigatórios.' });
     }
-
-    // Validação básica de e-mail e senha (adicione mais validações se precisar)
     if (password.length < 6) {
       return res.status(400).json({ message: 'A senha deve ter pelo menos 6 caracteres.' });
     }
-    // TODO: Adicionar validação de formato de email
 
-    // 2) Verifica se o e-mail já existe
+    console.log('[REGISTER] Verificando se email existe:', email); // Log
+    // A linha abaixo (originalmente 86) é a que o erro antigo apontava
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
+      console.log('[REGISTER] Email já existe:', email); // Log
       return res.status(409).json({ message: 'Este e-mail já está em uso.' });
     }
 
-    // 3) Criptografa a senha
-    const hashedPassword = await bcrypt.hash(password, 10); // 10 é o número de "salt rounds"
+    console.log('[REGISTER] Criptografando senha para:', email); // Log
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // 4) Cria o novo usuário no banco de dados
+    console.log('[REGISTER] Criando usuário:', email); // Log
     const newUser = await prisma.user.create({
       data: {
         email: email,
         password: hashedPassword,
         name: name,
-        // Adicione outros campos padrão aqui se necessário
+        // SEM username AQUI, pois está opcional no schema correto
       },
+      // NÃO FAÇA SELECT aqui para simplificar
     });
-    
-    // Cria um perfil básico para o novo usuário
+    console.log('[REGISTER] Usuário criado com ID:', newUser.id); // Log
+
+    console.log('[REGISTER] Criando perfil para usuário:', newUser.id); // Log
     await prisma.profile.create({
         data: {
             userId: newUser.id,
-            // Adicione valores padrão se quiser (bio, etc.)
         }
     });
+    console.log('[REGISTER] Perfil criado para usuário:', newUser.id); // Log
 
-    // 5) Gera um token JWT para o novo usuário (opcional, mas comum para logar direto)
+    console.log('[REGISTER] Gerando token para:', newUser.id); // Log
     const payload = { userId: newUser.id, email: newUser.email };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-    // 6) Retorna os dados do novo usuário (sem a senha) e o token
-    const { password: _, ...safeUser } = newUser;
-    return res.status(201).json({ token, user: safeUser }); // 201 Created
+    // --- RESPOSTA SIMPLIFICADA ---
+    // Não vamos buscar o usuário de novo aqui, só retornar o token
+    console.log('[REGISTER] Registro bem-sucedido para:', email); // Log
+    return res.status(201).json({ token, message: "Usuário registrado com sucesso!" }); // Só token e msg
 
   } catch (err) {
-    console.error('[REGISTER_ERR]', err?.message || err);
+    // Log de erro mais detalhado
+    console.error('[REGISTER_ERR]', err); // Loga o erro completo
+    // Verifica se é um erro conhecido do Prisma
+    if (err.code) { // Códigos de erro do Prisma geralmente têm 'code'
+        console.error(`[REGISTER_ERR] Prisma Code: ${err.code}, Meta: ${JSON.stringify(err.meta)}`);
+    }
     return res.status(500).json({ message: 'Erro interno ao registrar usuário.' });
   }
 });
