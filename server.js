@@ -1,5 +1,5 @@
 // backend/server.js
-// --- ATUALIZADO PARA WEBHOOKS DO MERCADOPAGO ---
+// --- ATUALIZADO (auth/me agora retorna 'blockedUsers') ---
 
 require('dotenv').config();
 
@@ -25,10 +25,6 @@ const interactionRoutes = require('./routes/interactionRoutes');
 const authMiddleware = require('./middleware/authMiddleware');
 const updateLastSeen = require('./middleware/updateLastSeen');
 
-// Webhook PagBank (Comentado)
-// const pagbankWebhook = require('./webhooks/pagbankWebhook');
-
-// --- NOVO ---
 // Webhook MercadoPago (Rotas públicas)
 const mercadopagoWebhook = require('./webhooks/mercadopagoWebhook');
 
@@ -39,7 +35,6 @@ app.set('trust proxy', 1);
 
 // ======================
 // 1) CORS E PARSERS (BODY PARSERS)
-// (Movido para cima. Deve vir ANTES de TODAS as rotas)
 // ======================
 const allowedOrigins = [
   'http://localhost:5173',
@@ -62,20 +57,15 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json()); // <-- Essencial para o webhook ler o req.body
+app.use(express.json()); 
 app.use(express.urlencoded({ extended: true }));
 
 
 // ======================
 // 2) ROTAS PÚBLICAS (WEBHOOKS E AUTENTICAÇÃO)
 // ======================
-// Webhook PagBank (Desativado)
-// app.use(pagbankWebhook);
 
-// --- NOVO ---
-// Webhook MercadoPago (Público, sem authMiddleware)
-// O prefixo /api/payments + /webhook-mercadopago (do arquivo)
-// forma: /api/payments/webhook-mercadopago
+// Webhook MercadoPago
 app.use('/api/payments', mercadopagoWebhook);
 
 // Rotas públicas de autenticação e produtos
@@ -102,10 +92,7 @@ app.use('/api/pimentas', authMiddleware, updateLastSeen, pimentaRoutes);
 app.use('/api/users', authMiddleware, updateLastSeen, userRoutes);
 app.use('/api/posts', authMiddleware, updateLastSeen, postRoutes);
 
-// --- ATUALIZADO ---
-// Estas são as rotas PROTEGIDAS de pagamento (ex: /create-pimenta-checkout)
-// Elas usam o mesmo prefixo /api/payments, mas como vêm DEPOIS
-// do webhook, o Express aplica o authMiddleware corretamente.
+// Rotas protegidas de pagamento
 app.use('/api/payments', authMiddleware, updateLastSeen, paymentRoutes);
 
 app.use('/api/lives', authMiddleware, updateLastSeen, liveRoutes(io));
@@ -123,7 +110,13 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
         },
         likesGiven: {
           select: { likedUserId: true }
+        },
+        // --- ADICIONADO (F04) ---
+        // Isso é necessário para o ProfileHeader saber o estado inicial do botão "Bloquear"
+        blockedUsers: {
+          select: { blockedUserId: true }
         }
+        // --- FIM DA ADIÇÃO ---
       }
     });
 

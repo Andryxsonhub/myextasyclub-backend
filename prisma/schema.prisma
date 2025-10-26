@@ -1,5 +1,5 @@
 // myextasyclub-backend/prisma/schema.prisma
-// --- VERSÃO CORRIGIDA E COMPLETA (Campo 'username' adicionado ao model User) ---
+// --- VERSÃO ATUALIZADA (Com Modelos de Denúncia e Bloqueio) ---
 
 generator client {
   provider = "prisma-client-js"
@@ -11,30 +11,42 @@ datasource db {
 }
 
 model User {
-  id              Int      @id @default(autoincrement())
-  email           String   @unique
-  username        String?  @unique // <--- A LINHA QUE ESTAVA FALTANDO
-  name            String?
-  password        String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  profile         Profile?
-  photos          Photo[]
-  videos          Video[]
-  posts           Post[]
-  streams         LiveStream[] @relation("Host")
-  transactions    Transaction[]
-  subscription    Subscription?
-  viewedProfiles  ProfileView[] @relation("Viewer")
-  likesGiven      Like[]        @relation("LikesGiven")
-  likesReceived   Like[]        @relation("LikesReceived")
-  following       Follow[]      @relation("Following")
-  followers       Follow[]      @relation("Followers")
-  interests       String?
-  desires         String?
-  fetishes        String?
-  lastSeenAt      DateTime?     @map("last_seen_at")
-  pimentaBalance  Int?          @default(0) @map("pimenta_balance")
+  id               Int      @id @default(autoincrement())
+  email            String   @unique
+  username         String?  @unique
+  name             String?
+  password         String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  profile          Profile?
+  photos           Photo[]
+  videos           Video[]
+  posts            Post[]
+  streams          LiveStream[]  @relation("Host")
+  transactions     Transaction[]
+  subscription     Subscription?
+  viewedProfiles   ProfileView[] @relation("Viewer")
+  likesGiven       Like[]        @relation("LikesGiven")
+  likesReceived    Like[]        @relation("LikesReceived")
+  following        Follow[]      @relation("Following")
+  followers        Follow[]      @relation("Followers")
+  interests        String?
+  desires          String?
+  fetishes         String?
+  lastSeenAt       DateTime?     @map("last_seen_at")
+  pimentaBalance   Int?          @default(0) @map("pimenta_balance")
+
+  // --- INÍCIO DAS ADIÇÕES (F03 E F04) ---
+  // Relação para denúncias (usuário denunciado)
+  reportsReceived Report[] @relation("Reported")
+  // Relação para denúncias (usuário que denunciou)
+  reportsMade     Report[] @relation("Reporter")
+
+  // Relação para bloqueios (usuário bloqueado)
+  blockedBy       BlockedUser[] @relation("Blocked")
+  // Relação para bloqueios (usuário que bloqueou)
+  blockedUsers    BlockedUser[] @relation("Blocker")
+  // --- FIM DAS ADIÇÕES ---
 
   @@map("users")
 }
@@ -183,4 +195,39 @@ model Subscription {
   updatedAt               DateTime @updatedAt
 
   @@map("subscriptions")
+}
+
+// --- NOVO MODELO (F03) ---
+model Report {
+  id        Int      @id @default(autoincrement())
+  reason    String   @db.Text
+  createdAt DateTime @default(now())
+
+  // Relação com o usuário DENUNCIADO
+  reportedUser   User @relation("Reported", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reportedUserId Int
+
+  // Relação com o usuário DENUNCIANTE
+  reporterUser   User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reporterId     Int
+
+  @@map("reports")
+}
+
+// --- NOVO MODELO (F04) ---
+model BlockedUser {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  // Relação com o usuário que BLOQUEOU
+  blockerUser   User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockerId     Int
+
+  // Relação com o usuário que FOI BLOQUEADO
+  blockedUser   User @relation("Blocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+  blockedUserId Int
+
+  // Garante que um usuário não possa bloquear o mesmo usuário várias vezes
+  @@unique([blockerId, blockedUserId])
+  @@map("blocked_users")
 }

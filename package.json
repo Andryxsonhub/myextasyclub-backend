@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.910.0",
-    "@prisma/client": "^6.17.0",
+    "@prisma/client": "^6.18.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
@@ -39,6 +39,6 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.10",
-    "prisma": "^6.17.0"
+    "prisma": "^6.18.0"
   }
 }
