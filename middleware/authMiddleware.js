@@ -1,36 +1,43 @@
-// backend/middleware/authMiddleware.js (VERSÃO FINAL E MAIS ROBUSTA)
+// backend/middleware/authMiddleware.js (VERSÃO FINAL CORRIGIDA - Handle OPTIONS)
 
 const jwt = require('jsonwebtoken');
 
 const authMiddleware = (req, res, next) => {
+  // --- ADICIONADO: Permitir requisições OPTIONS passarem ---
+  // O middleware 'cors' configurado no server.js cuidará de responder ao OPTIONS.
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+  // --- FIM DA ADIÇÃO ---
+
   // 1. Procura pelo token no cabeçalho 'Authorization'
   const authHeader = req.headers['authorization'];
 
-  // 2. Se o cabeçalho não existir, nega o acesso imediatamente
+  // 2. Se o cabeçalho não existir (e não for OPTIONS), nega o acesso.
   if (!authHeader) {
     return res.status(401).json({ message: 'Acesso negado. Nenhum token fornecido.' });
   }
 
-  // 3. O cabeçalho vem no formato "Bearer TOKEN". Nós separamos a palavra "Bearer" do token.
+  // 3. Separa "Bearer" do token.
   const token = authHeader.split(' ')[1];
 
-  // 4. Se, após a separação, não houver um token, nega o acesso.
+  // 4. Se não houver token após a separação, nega o acesso.
   if (!token) {
     return res.status(401).json({ message: 'Acesso negado. Token mal formatado.' });
   }
 
   try {
-    // 5. Verifica se o token é válido usando o nosso segredo
+    // 5. Verifica o token.
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     
-    // 6. Se for válido, adiciona os dados do usuário (o 'payload' do token) ao objeto 'req'
-    //    para que as próximas rotas possam usá-lo.
-    req.user = decoded;
+    // 6. Adiciona os dados do usuário ao 'req'.
+    req.user = decoded; // Garante que as rotas terão acesso a req.user.userId
     
-    // 7. Permite que a requisição continue para a rota desejada (ex: /profile ou /create-payment)
+    // 7. Continua para a rota desejada.
     next();
   } catch (error) {
-    // 8. Se o token for inválido ou expirado, o jwt.verify vai dar um erro.
+    // 8. Se o token for inválido/expirado.
+    console.warn('Falha na verificação do token JWT:', error.message); // Log mais detalhado
     res.status(403).json({ message: 'Token inválido ou expirado.' });
   }
 };

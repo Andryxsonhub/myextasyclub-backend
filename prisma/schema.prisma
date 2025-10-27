@@ -1,5 +1,5 @@
 // myextasyclub-backend/prisma/schema.prisma
-// --- VERSÃO ATUALIZADA (Com Modelos de Denúncia e Bloqueio) ---
+// --- VERSÃO REVISADA (Verificando referências de ID) ---
 
 generator client {
   provider = "prisma-client-js"
@@ -27,7 +27,7 @@ model User {
   subscription     Subscription?
   viewedProfiles   ProfileView[] @relation("Viewer")
   likesGiven       Like[]        @relation("LikesGiven")
-  likesReceived    Like[]        @relation("LikesReceived")
+  likesReceived    Like[]        @relation("LikesReceivedOnProfile")
   following        Follow[]      @relation("Following")
   followers        Follow[]      @relation("Followers")
   interests        String?
@@ -35,24 +35,16 @@ model User {
   fetishes         String?
   lastSeenAt       DateTime?     @map("last_seen_at")
   pimentaBalance   Int?          @default(0) @map("pimenta_balance")
-
-  // --- INÍCIO DAS ADIÇÕES (F03 E F04) ---
-  // Relação para denúncias (usuário denunciado)
-  reportsReceived Report[] @relation("Reported")
-  // Relação para denúncias (usuário que denunciou)
-  reportsMade     Report[] @relation("Reporter")
-
-  // Relação para bloqueios (usuário bloqueado)
-  blockedBy       BlockedUser[] @relation("Blocked")
-  // Relação para bloqueios (usuário que bloqueou)
-  blockedUsers    BlockedUser[] @relation("Blocker")
-  // --- FIM DAS ADIÇÕES ---
+  reportsReceived  Report[]      @relation("Reported")
+  reportsMade      Report[]      @relation("Reporter")
+  blockedBy        BlockedUser[] @relation("Blocked")
+  blockedUsers     BlockedUser[] @relation("Blocker")
 
   @@map("users")
 }
 
 model Profile {
-  id            Int      @id @default(autoincrement())
+  id            Int      @id @default(autoincrement()) // <-- ID existe aqui
   bio           String?  @db.Text
   coverPhotoUrl String?  @map("cover_photo_url")
   avatarUrl     String?  @map("avatar_url")
@@ -75,6 +67,7 @@ model Photo {
   createdAt   DateTime @default(now())
   author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   authorId    Int      @map("author_id")
+  likes       Like[]   @relation("LikesOnPhoto")
 
   @@map("photos")
 }
@@ -87,6 +80,7 @@ model Video {
   createdAt   DateTime @default(now())
   author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   authorId    Int      @map("author_id")
+  likes       Like[]   @relation("LikesOnVideo")
 
   @@map("videos")
 }
@@ -120,8 +114,8 @@ model Transaction {
   productType          String
   productName          String
   amountInCents        Int
-  pagbankChargeId      String?  @unique // Campo antigo do PagBank
-  mercadopagoPaymentId String?  @unique // Novo campo para o MercadoPago
+  pagbankChargeId      String?  @unique
+  mercadopagoPaymentId String?  @unique
   status               String
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -130,7 +124,7 @@ model Transaction {
 }
 
 model SubscriptionPlan {
-  id            Int      @id @default(autoincrement())
+  id            Int      @id @default(autoincrement()) // <-- ID existe aqui
   name          String   @unique
   priceInCents  Int
   subscriptions Subscription[]
@@ -152,6 +146,7 @@ model ProfileView {
   createdAt       DateTime @default(now())
   viewer          User     @relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
   viewerId        Int      @map("viewer_id")
+  // --- VERIFICAÇÃO AQUI ---
   viewedProfile   Profile  @relation("ViewedProfile", fields: [viewedProfileId], references: [id], onDelete: Cascade)
   viewedProfileId Int      @map("viewed_profile_id")
 
@@ -159,14 +154,24 @@ model ProfileView {
 }
 
 model Like {
-  id          Int      @id @default(autoincrement())
-  createdAt   DateTime @default(now())
-  liker       User     @relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
-  likerId     Int
-  likedUser   User     @relation("LikesReceived", fields: [likedUserId], references: [id], onDelete: Cascade)
-  likedUserId Int
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  liker     User     @relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
+  likerId   Int
+
+  likedUser   User? @relation("LikesReceivedOnProfile", fields: [likedUserId], references: [id], onDelete: Cascade)
+  likedUserId Int?
+
+  likedPhoto   Photo? @relation("LikesOnPhoto", fields: [likedPhotoId], references: [id], onDelete: Cascade)
+  likedPhotoId Int?
+
+  likedVideo   Video? @relation("LikesOnVideo", fields: [likedVideoId], references: [id], onDelete: Cascade)
+  likedVideoId Int?
 
   @@unique([likerId, likedUserId])
+  @@unique([likerId, likedPhotoId])
+  @@unique([likerId, likedVideoId])
   @@map("likes")
 }
 
@@ -187,6 +192,7 @@ model Subscription {
   userId                  Int      @unique
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   planId                  Int
+  // --- VERIFICAÇÃO AQUI ---
   plan                    SubscriptionPlan @relation(fields: [planId], references: [id])
   mercadopagoSubscriptionId String   @unique
   status                  String
@@ -197,37 +203,28 @@ model Subscription {
   @@map("subscriptions")
 }
 
-// --- NOVO MODELO (F03) ---
 model Report {
   id        Int      @id @default(autoincrement())
   reason    String   @db.Text
   createdAt DateTime @default(now())
 
-  // Relação com o usuário DENUNCIADO
   reportedUser   User @relation("Reported", fields: [reportedUserId], references: [id], onDelete: Cascade)
   reportedUserId Int
-
-  // Relação com o usuário DENUNCIANTE
   reporterUser   User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
   reporterId     Int
 
   @@map("reports")
 }
 
-// --- NOVO MODELO (F04) ---
 model BlockedUser {
   id        Int      @id @default(autoincrement())
   createdAt DateTime @default(now())
 
-  // Relação com o usuário que BLOQUEOU
   blockerUser   User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
   blockerId     Int
-
-  // Relação com o usuário que FOI BLOQUEADO
   blockedUser   User @relation("Blocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
   blockedUserId Int
 
-  // Garante que um usuário não possa bloquear o mesmo usuário várias vezes
   @@unique([blockerId, blockedUserId])
   @@map("blocked_users")
 }
