@@ -8,7 +8,6 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "debug": "node debug.js",
-    "build": "tsc",
     "prisma:deploy": "npx prisma generate && npx prisma migrate deploy",
     "deploy:fix_p3009": "npx prisma migrate resolve --rolled-back 20251026154727_add_username_to_user"
   },
