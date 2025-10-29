@@ -50,7 +50,17 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.warn(`CORS bloqueado para origem: ${origin}`); // Loga a origem bloqueada
-      callback(new Error('Acesso não permitido por CORS'));
+      
+      // =======================================================
+      // ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼ CORREÇÃO AQUI ▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼▼
+      //
+      // Trocamos 'new Error(...)' por 'null, false'
+      // para rejeitar a origem sem quebrar o servidor (erro 503).
+      //
+      callback(null, false);
+      //
+      // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ CORREÇÃO AQUI ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+      // =======================================================
     }
   },
   credentials: true
