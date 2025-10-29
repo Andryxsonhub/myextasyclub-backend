@@ -1,5 +1,6 @@
 // backend/routes/paymentRoutes.js
 // --- ATUALIZADO PARA MERCADOPAGO (PIMENTAS + ASSINATURAS) ---
+// --- [CORREÇÃO] Adicionado 'industry_data' para pimentas ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -37,7 +38,7 @@ router.get('/packages', authMiddleware, async (_req, res) => {
 });
 
 // ===============================================================
-// ROTA PARA CRIAR PAGAMENTO DE PIMENTAS (MERCADOPAGO) (Sem alteração)
+// ROTA PARA CRIAR PAGAMENTO DE PIMENTAS (MERCADOPAGO) (Alterado)
 // ===============================================================
 /**
  * POST /api/payments/create-pimenta-checkout
@@ -97,6 +98,16 @@ router.post('/create-pimenta-checkout', authMiddleware, async (req, res) => {
         // auto_return: 'approved', // Comentado para localhost
         external_reference: internalTransaction.id,
         notification_url: `${process.env.BACKEND_URL}/api/payments/webhook-mercadopago`,
+        
+        // =======================================================
+        // ▼▼▼ CORREÇÃO (O que o Suporte MP pediu) ▼▼▼
+        //
+        industry_data: {
+          type: "applications_and_online_platforms"
+        },
+        //
+        // ▲▲▲ FIM DA CORREÇÃO ▲▲▲
+        // =======================================================
       },
     };
 
@@ -207,12 +218,12 @@ router.post('/create-subscription-checkout', authMiddleware, async (req, res) =>
     // 5. [IMPORTANTE] Salvar/Atualizar a assinatura no nosso banco de dados
     //    Usamos 'upsert' para criar ou atualizar caso o usuário já tenha uma assinatura inativa.
     const expiresAt = new Date();
-     if (frequency_type === 'months') {
-         expiresAt.setMonth(expiresAt.getMonth() + frequency);
-     } else if (frequency_type === 'days') { // Adicione outros tipos se necessário
-         expiresAt.setDate(expiresAt.getDate() + frequency);
-     }
-     // Adicionar lógica para anos, etc.
+      if (frequency_type === 'months') {
+          expiresAt.setMonth(expiresAt.getMonth() + frequency);
+      } else if (frequency_type === 'days') { // Adicione outros tipos se necessário
+          expiresAt.setDate(expiresAt.getDate() + frequency);
+      }
+      // Adicionar lógica para anos, etc.
 
     await prisma.subscription.upsert({
       where: { userId: userId }, // Chave única para encontrar a assinatura do usuário
@@ -239,11 +250,11 @@ router.post('/create-subscription-checkout', authMiddleware, async (req, res) =>
 
   } catch (error) {
     console.error('Erro ao criar assinatura MercadoPago:');
-     if (error.response) {
-       console.error(JSON.stringify(error.response.data, null, 2));
-     } else {
-       console.error(error.message);
-     }
+      if (error.response) {
+        console.error(JSON.stringify(error.response.data, null, 2));
+      } else {
+        console.error(error.message);
+      }
     const mpErrorMessage = error.response?.data?.message || 'Erro ao processar assinatura.';
     res.status(500).json({ message: mpErrorMessage });
   }
@@ -298,7 +309,7 @@ router.post('/webhook-mercadopago', async (req, res) => {
          if (!subscriptionId) {
             console.warn('Webhook de assinatura sem ID recebido.');
             return res.sendStatus(200);
-        }
+         }
 
         // 2. Buscar informações da assinatura na API do MP
         //    const subscriptionDetails = await preapproval.get({ id: subscriptionId });
