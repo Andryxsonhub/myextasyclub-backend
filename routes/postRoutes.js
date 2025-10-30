@@ -1,9 +1,10 @@
 // myextasyclub-backend/routes/postRoutes.js
-// --- CÓDIGO COMPLETO E CORRIGIDO (profilePictureUrl -> profile.avatarUrl) ---
+// --- CÓDIGO 100% CORRIGIDO ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
-const authMiddleware = require('../middleware/authMiddleware');
+// --- CORREÇÃO APLICADA AQUI ---
+const { checkAuth } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -11,9 +12,10 @@ const router = express.Router();
 // ROTA PARA CRIAR UM NOVO POST
 // ----------------------------------------------------
 // POST /api/posts
-router.post('/', authMiddleware, async (req, res) => {
+// --- CORREÇÃO APLICADA AQUI ---
+router.post('/', checkAuth, async (req, res) => {
     const { content } = req.body;
-    const authorId = req.user.userId; // Vem do authMiddleware
+    const authorId = req.user.userId;
 
     if (!content) {
         return res.status(400).json({ message: 'O conteúdo do post não pode estar vazio.' });
@@ -25,13 +27,11 @@ router.post('/', authMiddleware, async (req, res) => {
                 content,
                 authorId: authorId,
             },
-            // Incluir dados do autor para retornar ao frontend, se necessário
             include: {
                 author: {
                     select: {
                         id: true,
                         name: true,
-                        // --- CORREÇÃO APLICADA AQUI TAMBÉM ---
                         profile: {
                             select: { avatarUrl: true }
                         }
@@ -39,8 +39,7 @@ router.post('/', authMiddleware, async (req, res) => {
                 }
             }
         });
-        
-        // Formata o retorno para incluir profilePictureUrl
+
         const formattedPost = {
             ...newPost,
             author: {
@@ -57,15 +56,14 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 // ----------------------------------------------------
-// ROTA PARA BUSCAR OS POSTS DO USUÁRIO LOGADO (PARA A PÁGINA "MEU PERFIL")
+// ROTA PARA BUSCAR OS POSTS DO USUÁRIO LOGADO
 // ----------------------------------------------------
 // GET /api/posts
-router.get('/', authMiddleware, async (req, res) => {
+// --- CORREÇÃO APLICADA AQUI ---
+router.get('/', checkAuth, async (req, res) => {
     try {
         const posts = await prisma.post.findMany({
             where: {
-                // --- CORREÇÃO IMPORTANTE: Usar o ID do usuário logado ---
-                // O código anterior estava fixo com authorId: 1
                 authorId: req.user.userId
             },
             orderBy: {
@@ -75,16 +73,14 @@ router.get('/', authMiddleware, async (req, res) => {
                 author: {
                     select: {
                         name: true,
-                        // --- CORREÇÃO APLICADA AQUI ---
-                        profile: { // Busca dentro do profile
-                            select: { avatarUrl: true } // Pega o avatarUrl
+                        profile: {
+                            select: { avatarUrl: true }
                         }
                     }
                 }
             }
         });
 
-        // Formata os posts para incluir profilePictureUrl no nível esperado pelo frontend
         const formattedPosts = posts.map(post => ({
             ...post,
             author: {
@@ -103,10 +99,11 @@ router.get('/', authMiddleware, async (req, res) => {
 
 
 // ----------------------------------------------------
-// ROTA PARA BUSCAR POSTS DE UM USUÁRIO ESPECÍFICO (PELO ID)
+// ROTA PARA BUSCAR POSTS DE UM USUÁRIO ESPECÍFICO
 // ----------------------------------------------------
 // GET /api/posts/user/:userId
-router.get('/user/:userId', authMiddleware, async (req, res) => {
+// --- CORREÇÃO APLICADA AQUI ---
+router.get('/user/:userId', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
         if (isNaN(userId)) {
@@ -124,7 +121,6 @@ router.get('/user/:userId', authMiddleware, async (req, res) => {
                 author: {
                     select: {
                         name: true,
-                         // --- CORREÇÃO APLICADA AQUI ---
                         profile: {
                             select: { avatarUrl: true }
                         }
@@ -149,37 +145,34 @@ router.get('/user/:userId', authMiddleware, async (req, res) => {
 });
 
 // ----------------------------------------------------
-// ROTA PARA BUSCAR O FEED (POSTS DE QUEM O USUÁRIO SEGUE - EXEMPLO)
+// ROTA PARA BUSCAR O FEED (POSTS DE QUEM O USUÁRIO SEGUE)
 // ----------------------------------------------------
 // GET /api/posts/feed
-router.get('/feed', authMiddleware, async (req, res) => {
+// --- CORREÇÃO APLICADA AQUI ---
+router.get('/feed', checkAuth, async (req, res) => {
     const userId = req.user.userId;
     try {
-        // 1. Encontra quem o usuário logado segue
         const following = await prisma.follow.findMany({
             where: { followerId: userId },
-            select: { followingId: true } // Pega apenas os IDs
+            select: { followingId: true }
         });
 
-        // Extrai apenas os IDs para uma lista
         const followingIds = following.map(f => f.followingId);
 
-        // 2. Busca os posts dessas pessoas (e os posts do próprio usuário, opcional)
         const posts = await prisma.post.findMany({
             where: {
                 authorId: {
-                    in: [...followingIds, userId] // Inclui posts do próprio usuário no feed
+                    in: [...followingIds, userId]
                 }
             },
             orderBy: {
                 createdAt: 'desc'
             },
-            take: 20, // Limita a quantidade de posts no feed
+            take: 20,
             include: {
                 author: {
                     select: {
                         name: true,
-                        // --- CORREÇÃO APLICADA AQUI ---
                         profile: {
                             select: { avatarUrl: true }
                         }
@@ -204,12 +197,12 @@ router.get('/feed', authMiddleware, async (req, res) => {
     }
 });
 
-
 // ----------------------------------------------------
-// ROTA PARA DELETAR UM POST (OPCIONAL)
+// ROTA PARA DELETAR UM POST
 // ----------------------------------------------------
 // DELETE /api/posts/:postId
-router.delete('/:postId', authMiddleware, async (req, res) => {
+// --- CORREÇÃO APLICADA AQUI ---
+router.delete('/:postId', checkAuth, async (req, res) => {
     try {
         const postId = parseInt(req.params.postId, 10);
         const userId = req.user.userId;
@@ -218,7 +211,6 @@ router.delete('/:postId', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'ID do post inválido.' });
         }
 
-        // Verifica se o post existe e pertence ao usuário logado
         const post = await prisma.post.findUnique({
             where: { id: postId }
         });
@@ -231,7 +223,6 @@ router.delete('/:postId', authMiddleware, async (req, res) => {
             return res.status(403).json({ message: 'Você não tem permissão para deletar este post.' });
         }
 
-        // Deleta o post
         await prisma.post.delete({
             where: { id: postId }
         });
