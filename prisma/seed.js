@@ -2,6 +2,7 @@
 // --- CÓDIGO COMPLETO E CORRIGIDO ---
 
 const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs'); // <--- ADICIONE ESTA LINHA QUE FALTAVA
 const prisma = new PrismaClient();
 
 // Dados dos Planos de Assinatura (Exemplo)
@@ -93,32 +94,32 @@ async function main() {
   }
 
   // --- Adicionar Usuários de Teste (Opcional, mas recomendado) ---
-  // console.log('Criando usuários de teste...');
-  // try {
-  //     const user1 = await prisma.user.upsert({
-  //         where: { email: 'teste1@email.com' },
-  //         update: {},
-  //         create: {
-  //             email: 'teste1@email.com',
-  //             name: 'Usuário Teste Um',
-  //             password: await bcrypt.hash('senha123', 10), // Lembre-se de importar bcrypt
-  //             profile: { create: { bio: 'Bio do Teste 1', location: 'Cidade A', gender: 'Masculino' } }
-  //         },
-  //     });
-  //     const user2 = await prisma.user.upsert({
-  //         where: { email: 'teste2@email.com' },
-  //         update: {},
-  //         create: {
-  //             email: 'teste2@email.com',
-  //             name: 'Usuária Teste Dois',
-  //             password: await bcrypt.hash('senha123', 10),
-  //             profile: { create: { bio: 'Bio do Teste 2', location: 'Cidade B', gender: 'Feminino' } }
-  //         },
-  //     });
-  //     console.log('Usuários de teste criados:', user1.email, user2.email);
-  // } catch (userError) {
-  //     console.error("Erro ao criar usuários de teste:", userError);
-  // }
+  console.log('Criando usuários de teste...');
+  try {
+      const user1 = await prisma.user.upsert({
+          where: { email: 'teste1@email.com' },
+          update: {},
+          create: {
+              email: 'teste1@email.com',
+              name: 'Anderson Santos',
+              password: await bcrypt.hash('senha123', 10), // Agora o bcrypt está importado
+              profile: { create: { bio: 'Bio do Teste 1', location: 'Cidade A', gender: 'Masculino' } }
+          },
+      });
+      const user2 = await prisma.user.upsert({
+          where: { email: 'teste2@email.com' },
+          update: {},
+          create: {
+              email: 'teste2@email.com',
+              name: 'Juliana Silva',
+              password: await bcrypt.hash('senha123', 10),
+              profile: { create: { bio: 'Bio do Teste 2', location: 'Cidade B', gender: 'Feminino' } }
+          },
+      });
+      console.log('Usuários de teste criados:', user1.email, user2.email);
+  } catch (userError) {
+      console.error("Erro ao criar usuários de teste:", userError);
+  }
 
 
   console.log('Seeding finalizado.');

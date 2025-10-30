@@ -1,5 +1,10 @@
 // backend/routes/paymentRoutes.js
+<<<<<<< HEAD
 // --- ATUALIZADO COM LOGS DE DEBUG PARA O MERCADOPAGO ---
+=======
+// --- ATUALIZADO PARA MERCADOPAGO (PIMENTAS + ASSINATURAS) ---
+// --- [CORREÇÃO] Adicionado 'industry_data' para pimentas ---
+>>>>>>> c711a66a28e64637fc301d50ab5c09354107c3fb
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -40,7 +45,11 @@ router.get('/packages', checkAuth, async (_req, res) => {
 });
 
 // ===============================================================
+<<<<<<< HEAD
 // ROTA PARA CRIAR PAGAMENTO DE PIMENTAS (MERCADOPAGO) (LOGS ADICIONADOS)
+=======
+// ROTA PARA CRIAR PAGAMENTO DE PIMENTAS (MERCADOPAGO) (Alterado)
+>>>>>>> c711a66a28e64637fc301d50ab5c09354107c3fb
 // ===============================================================
 /**
  * POST /api/payments/create-pimenta-checkout
@@ -77,6 +86,7 @@ router.post('/create-pimenta-checkout', checkAuth, async (req, res) => {
       },
     });
 
+<<<<<<< HEAD
     const preference = new Preference(client);
     const preferenceData = {
       body: {
@@ -103,6 +113,44 @@ router.post('/create-pimenta-checkout', checkAuth, async (req, res) => {
         notification_url: `${process.env.BACKEND_URL}/api/payments/webhook-mercadopago`,
       },
     };
+=======
+    const preference = new Preference(client);
+    const preferenceData = {
+      body: {
+        items: [
+          {
+            id: pimentaPackage.id.toString(),
+            title: pimentaPackage.name,
+            description: `Pacote de ${pimentaPackage.pimentaAmount} pimentas`,
+            quantity: 1,
+            unit_price: pimentaPackage.priceInCents / 100,
+          },
+        ],
+        payer: {
+          name: user.name || `Usuário ${user.id}`, // Adiciona fallback para nome
+          email: user.email,
+        },
+        back_urls: {
+          success: `${process.env.FRONTEND_URL}/pagamento-sucesso?type=pimenta`,
+          failure: `${process.env.FRONTEND_URL}/pagamento-falha`,
+          pending: `${process.env.FRONTEND_URL}/pagamento-pendente`,
+        },
+        // auto_return: 'approved', // Comentado para localhost
+        external_reference: internalTransaction.id,
+        notification_url: `${process.env.BACKEND_URL}/api/payments/webhook-mercadopago`,
+        
+        // =======================================================
+        // ▼▼▼ CORREÇÃO (O que o Suporte MP pediu) ▼▼▼
+        //
+        industry_data: {
+          type: "applications_and_online_platforms"
+        },
+        //
+        // ▲▲▲ FIM DA CORREÇÃO ▲▲▲
+        // =======================================================
+      },
+    };
+>>>>>>> c711a66a28e64637fc301d50ab5c09354107c3fb
 
     // --- 1. LOG ADICIONADO (O QUE O ADRIANO QUER VER) ---
     console.log('===============================================================');
@@ -224,6 +272,7 @@ router.post('/create-subscription-checkout', checkAuth, async (req, res) => {
 
     console.log("MP Subscription Result:", result); // Log para depuração
 
+<<<<<<< HEAD
     // 5. [IMPORTANTE] Salvar/Atualizar a assinatura no nosso banco de dados
     const expiresAt = new Date();
      if (frequency_type === 'months') {
@@ -231,6 +280,17 @@ router.post('/create-subscription-checkout', checkAuth, async (req, res) => {
      } else if (frequency_type === 'days') { 
          expiresAt.setDate(expiresAt.getDate() + frequency);
      }
+=======
+    // 5. [IMPORTANTE] Salvar/Atualizar a assinatura no nosso banco de dados
+    //    Usamos 'upsert' para criar ou atualizar caso o usuário já tenha uma assinatura inativa.
+    const expiresAt = new Date();
+      if (frequency_type === 'months') {
+          expiresAt.setMonth(expiresAt.getMonth() + frequency);
+      } else if (frequency_type === 'days') { // Adicione outros tipos se necessário
+          expiresAt.setDate(expiresAt.getDate() + frequency);
+      }
+      // Adicionar lógica para anos, etc.
+>>>>>>> c711a66a28e64637fc301d50ab5c09354107c3fb
 
     await prisma.subscription.upsert({
       where: { userId: userId }, 
@@ -311,10 +371,44 @@ router.post('/webhook-mercadopago', async (req, res) => {
 
     res.sendStatus(200);
 
+<<<<<<< HEAD
   } catch (error) {
     console.error('Erro ao processar webhook MercadoPago:', error);
     res.sendStatus(500); 
   }
+=======
+    } else if (topic === 'preapproval' || type === 'preapproval') { // Notificação de Assinatura
+        const subscriptionId = id || req.body?.data?.id;
+         if (!subscriptionId) {
+            console.warn('Webhook de assinatura sem ID recebido.');
+            return res.sendStatus(200);
+         }
+
+        // 2. Buscar informações da assinatura na API do MP
+        //    const subscriptionDetails = await preapproval.get({ id: subscriptionId });
+        //    console.log('Detalhes da Assinatura MP:', subscriptionDetails);
+
+        // 3. Encontrar a assinatura no nosso banco de dados
+        //    const internalSubscription = await prisma.subscription.findUnique({ where: { mercadopagoSubscriptionId: subscriptionId } });
+
+        // 4. Atualizar o status da nossa assinatura interna (authorized, paused, cancelled)
+        //    await prisma.subscription.update({ where: { id: internalSubscription.id }, data: { status: subscriptionDetails.status }});
+        //    console.log(`Status da assinatura ${subscriptionId} atualizado para ${subscriptionDetails.status}`);
+
+        // TODO: Lógica adicional (ex: remover acesso se cancelado, notificar usuário, etc.)
+
+    } else {
+      console.log('Webhook não reconhecido:', topic || type);
+    }
+
+    // Responde 200 OK para o MercadoPago saber que recebemos
+    res.sendStatus(200);
+
+  } catch (error) {
+    console.error('Erro ao processar webhook MercadoPago:', error);
+    res.sendStatus(500); // Informa erro ao MP (ele pode tentar reenviar)
+  }
+>>>>>>> c711a66a28e64637fc301d50ab5c09354107c3fb
 });
 
 
