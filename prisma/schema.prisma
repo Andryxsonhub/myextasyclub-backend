@@ -1,230 +1,258 @@
 // myextasyclub-backend/prisma/schema.prisma
-// --- VERSÃO REVISADA (Verificando referências de ID) ---
+// --- VERSÃO 100% CORRIGIDA E SUPER-LIMPA ---
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider = "mysql"
+  url    	= env("DATABASE_URL")
 }
 
 model User {
-  id               Int      @id @default(autoincrement())
-  email            String   @unique
-  username         String?  @unique
-  name             String?
-  password         String
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  profile          Profile?
-  photos           Photo[]
-  videos           Video[]
-  posts            Post[]
-  streams          LiveStream[]  @relation("Host")
-  transactions     Transaction[]
-  subscription     Subscription?
-  viewedProfiles   ProfileView[] @relation("Viewer")
-  likesGiven       Like[]        @relation("LikesGiven")
-  likesReceived    Like[]        @relation("LikesReceivedOnProfile")
-  following        Follow[]      @relation("Following")
-  followers        Follow[]      @relation("Followers")
-  interests        String?
-  desires          String?
-  fetishes         String?
-  lastSeenAt       DateTime?     @map("last_seen_at")
-  pimentaBalance   Int?          @default(0) @map("pimenta_balance")
-  reportsReceived  Report[]      @relation("Reported")
-  reportsMade      Report[]      @relation("Reporter")
-  blockedBy        BlockedUser[] @relation("Blocked")
-  blockedUsers     BlockedUser[] @relation("Blocker")
+  id        	Int    	@id @default(autoincrement())
+  email    	String 	@unique
+  username  	String?	@unique
+  name    	String?
+  password  	String
+  createdAt  	DateTime @default(now())
+  updatedAt  	DateTime @updatedAt
+  profile  	Profile?
+  photos    	Photo[]
+  videos    	Video[]
+  posts    	Post[]
+  streams  	LiveStream[]  @relation("Host")
+  transactions 	Transaction[]
+  subscription 	Subscription?
+  viewedProfiles ProfileView[] @relation("Viewer")
+  likesGiven  	Like[]  	  @relation("LikesGiven")
+  likesReceived  Like[]  	  @relation("LikesReceivedOnProfile")
+  following  	Follow[]  	  @relation("Following")
+  followers  	Follow[]  	  @relation("Followers")
+  interests  	String?
+  desires  	String?
+  fetishes  	String?
+  lastSeenAt  	DateTime?  	  @map("last_seen_at")
+  pimentaBalance Int  	  @default(0) @map("pimenta_balance")
+  reportsReceived Report[]  	  @relation("Reported")
+  reportsMade  	Report[]  	  @relation("Reporter")
+  blockedBy  	BlockedUser[] @relation("Blocked")
+  blockedUsers 	BlockedUser[] @relation("Blocker")
 
-  @@map("users")
+  // --- Linhas que adicionamos (Chat e Extrato) ---
+  sentMessages     Message[]         @relation("SentMessages")
+  receivedMessages Message[]         @relation("ReceivedMessages")
+  extrato          ExtratoPimentas[] @relation("Extrato")
+
+  @@map("users")
 }
 
 model Profile {
-  id            Int      @id @default(autoincrement()) // <-- ID existe aqui
-  bio           String?  @db.Text
-  coverPhotoUrl String?  @map("cover_photo_url")
-  avatarUrl     String?  @map("avatar_url")
-  location      String?
-  gender        String?
-  avatarKey     String?  @map("avatar_key")
-  coverPhotoKey String?  @map("cover_photo_key")
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        Int      @unique
-  views         ProfileView[] @relation("ViewedProfile")
+  id        	Int    	@id @default(autoincrement()) 
+  bio      	String?	@db.Text
+  coverPhotoUrl String?	@map("cover_photo_url")
+  avatarUrl  	String?	@map("avatar_url")
+  location  	String?
+  gender    	String?
+  avatarKey  	String?	@map("avatar_key")
+  coverPhotoKey String?	@map("cover_photo_key")
+  user    	User  	@relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    	Int    	@unique
+  views    	ProfileView[] @relation("ViewedProfile")
 
-  @@map("profiles")
+  @@map("profiles")
 }
 
 model Photo {
-  id          Int      @id @default(autoincrement())
-  url         String
-  key         String?
-  description String?
-  createdAt   DateTime @default(now())
-  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorId    Int      @map("author_id")
-  likes       Like[]   @relation("LikesOnPhoto")
+  id      	Int    	@id @default(autoincrement())
+  url    	String
+  key    	String?
+  description 	String?
+  createdAt  	DateTime @default(now())
+  author    	User  	@relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  	Int    	@map("author_id")
+  likes    	Like[]  	@relation("LikesOnPhoto")
 
-  @@map("photos")
+  @@map("photos")
 }
 
 model Video {
-  id          Int      @id @default(autoincrement())
-  url         String
-  key         String?
-  description String?
-  createdAt   DateTime @default(now())
-  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorId    Int      @map("author_id")
-  likes       Like[]   @relation("LikesOnVideo")
+  id      	Int    	@id @default(autoincrement())
+  url    	String
+  key    	String?
+  description 	String?
+  createdAt  	DateTime @default(now())
+  author    	User  	@relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  	Int    	@map("author_id")
+  likes    	Like[]  	@relation("LikesOnVideo")
 
-  @@map("videos")
+  @@map("videos")
 }
 
 model Post {
-  id        Int      @id @default(autoincrement())
-  content   String   @db.Text
-  createdAt DateTime @default(now())
-  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorId  Int      @map("author_id")
+  id    	Int    	@id @default(autoincrement())
+  content  	String 	@db.Text
+  createdAt 	DateTime @default(now())
+  author  	User  	@relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  	Int    	@map("author_id")
 
-  @@map("posts")
+  @@map("posts")
 }
 
 model LiveStream {
-  id        Int      @id @default(autoincrement())
-  roomName  String   @unique
-  host      User     @relation("Host", fields: [hostId], references: [id])
-  hostId    Int
-  isActive  Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id    	Int    	@id @default(autoincrement())
+  roomName  	String 	@unique
+  host  	User  	@relation("Host", fields: [hostId], references: [id])
+  hostId  	Int
+  isActive  	Boolean  @default(false)
+  createdAt 	DateTime @default(now())
 
-  @@map("live_streams")
+  @@map("live_streams")
 }
 
 model Transaction {
-  id                   String   @id @default(cuid())
-  userId               Int
-  user                 User     @relation(fields: [userId], references: [id])
-  productId            Int
-  productType          String
-  productName          String
-  amountInCents        Int
-  pagbankChargeId      String?  @unique
-  mercadopagoPaymentId String?  @unique
-  status               String
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id        	String 	@id @default(cuid())
+  userId    	Int
+  user    	User  	@relation(fields: [userId], references: [id])
+  productId  	Int
+  productType 	String
+  productName 	String
+  amountInCents Int
+  pagbankChargeId 	String?	@unique
+  mercadopagoPaymentId String?	@unique
+  status    	String
+  createdAt  	DateTime @default(now())
+  updatedAt  	DateTime @updatedAt
 
-  @@map("transactions")
+  @@map("transactions")
 }
 
 model SubscriptionPlan {
-  id            Int      @id @default(autoincrement()) // <-- ID existe aqui
-  name          String   @unique
-  priceInCents  Int
-  subscriptions Subscription[]
+  id      	Int    	@id @default(autoincrement()) 
+  name    	String 	@unique
+  priceInCents  	Int
+  subscriptions Subscription[]
 
-  @@map("subscription_plans")
+  @@map("subscription_plans")
 }
 
 model PimentaPackage {
-  id            Int    @id @default(autoincrement())
-  name          String @unique
-  pimentaAmount Int
-  priceInCents  Int
+  id      	Int    @id @default(autoincrement())
+  name    	String @unique
+  pimentaAmount 	Int
+  priceInCents  	Int
 
-  @@map("pimenta_packages")
+  @@map("pimenta_packages")
 }
 
 model ProfileView {
-  id              Int      @id @default(autoincrement())
-  createdAt       DateTime @default(now())
-  viewer          User     @relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
-  viewerId        Int      @map("viewer_id")
-  // --- VERIFICAÇÃO AQUI ---
-  viewedProfile   Profile  @relation("ViewedProfile", fields: [viewedProfileId], references: [id], onDelete: Cascade)
-  viewedProfileId Int      @map("viewed_profile_id")
+  id      	Int    	@id @default(autoincrement())
+  createdAt  	DateTime @default(now())
+  viewer    	User  	@relation("Viewer", fields: [viewerId], references: [id], onDelete: Cascade)
+  viewerId  	Int    	@map("viewer_id")
+  viewedProfile 	Profile  @relation("ViewedProfile", fields: [viewedProfileId], references: [id], onDelete: Cascade)
+  viewedProfileId Int    	@map("viewed_profile_id")
 
-  @@map("profile_views")
+  @@map("profile_views")
 }
 
 model Like {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id    	Int    	@id @default(autoincrement())
+  createdAt 	DateTime @default(now())
+  liker  	User  	@relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
+  likerId  	Int
+  likedUser  	User? 	@relation("LikesReceivedOnProfile", fields: [likedUserId], references: [id], onDelete: Cascade)
+  likedUserId 	Int?
+  likedPhoto  	Photo? @relation("LikesOnPhoto", fields: [likedPhotoId], references: [id], onDelete: Cascade)
+  likedPhotoId 	Int?
+  likedVideo  	Video? @relation("LikesOnVideo", fields: [likedVideoId], references: [id], onDelete: Cascade)
+  likedVideoId 	Int?
 
-  liker     User     @relation("LikesGiven", fields: [likerId], references: [id], onDelete: Cascade)
-  likerId   Int
-
-  likedUser   User? @relation("LikesReceivedOnProfile", fields: [likedUserId], references: [id], onDelete: Cascade)
-  likedUserId Int?
-
-  likedPhoto   Photo? @relation("LikesOnPhoto", fields: [likedPhotoId], references: [id], onDelete: Cascade)
-  likedPhotoId Int?
-
-  likedVideo   Video? @relation("LikesOnVideo", fields: [likedVideoId], references: [id], onDelete: Cascade)
-  likedVideoId Int?
-
-  @@unique([likerId, likedUserId])
-  @@unique([likerId, likedPhotoId])
-  @@unique([likerId, likedVideoId])
-  @@map("likes")
+  @@unique([likerId, likedUserId])
+  @@unique([likerId, likedPhotoId])
+  @@unique([likerId, likedVideoId])
+  @@map("likes")
 }
 
 model Follow {
-  id          Int      @id @default(autoincrement())
-  createdAt   DateTime @default(now())
-  follower    User     @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
-  followerId  Int
-  following   User     @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
-  followingId Int
+  id    	Int    	@id @default(autoincrement())
+  createdAt  	DateTime @default(now())
+  follower  	User  	@relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  followerId  	Int
+  following  	User  	@relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+  followingId 	Int
 
-  @@unique([followerId, followingId])
-  @@map("follows")
+  @@unique([followerId, followingId])
+  @@map("follows")
 }
 
 model Subscription {
-  id                      Int      @id @default(autoincrement())
-  userId                  Int      @unique
-  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  planId                  Int
-  // --- VERIFICAÇÃO AQUI ---
-  plan                    SubscriptionPlan @relation(fields: [planId], references: [id])
-  mercadopagoSubscriptionId String   @unique
-  status                  String
-  expiresAt               DateTime
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id      	Int    	@id @default(autoincrement())
+  userId    	Int    	@unique
+  user    	User  	@relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId    	Int
+  plan    	SubscriptionPlan @relation(fields: [planId], references: [id])
+  mercadopagoSubscriptionId String 	@unique
+  status    	String
+  expiresAt  	DateTime
+  createdAt  	DateTime @default(now())
+  updatedAt  	DateTime @updatedAt
 
-  @@map("subscriptions")
+  @@map("subscriptions")
 }
 
 model Report {
-  id        Int      @id @default(autoincrement())
-  reason    String   @db.Text
-  createdAt DateTime @default(now())
+  id    	Int    	@id @default(autoincrement())
+  reason  	String 	@db.Text
+  createdAt 	DateTime @default(now())
+  reportedUser  User 	@relation("Reported", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reportedUserId 	Int
+  reporterUser  User 	@relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reporterId  	Int
 
-  reportedUser   User @relation("Reported", fields: [reportedUserId], references: [id], onDelete: Cascade)
-  reportedUserId Int
-  reporterUser   User @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
-  reporterId     Int
-
-  @@map("reports")
+  @@map("reports")
 }
 
 model BlockedUser {
-  id        Int      @id @default(autoincrement())
-  createdAt DateTime @default(now())
+  id    	Int    	@id @default(autoincrement())
+  createdAt 	DateTime @default(now())
+  blockerUser  	User 	@relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockerId  	Int
+  blockedUser  	User 	@relation("Blocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+  blockedUserId 	Int
 
-  blockerUser   User @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
-  blockerId     Int
-  blockedUser   User @relation("Blocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
-  blockedUserId Int
-
-  @@unique([blockerId, blockedUserId])
-  @@map("blocked_users")
+  @@unique([blockerId, blockedUserId])
+  @@map("blocked_users")
 }
+
+// --- ★★★ MODELO NOVO 1: EXTRATO PIMENTAS ★★★ ---
+// (Este modelo registra todas as transferências)
+model ExtratoPimentas {
+  id             Int      @id @default(autoincrement())
+  user           User     @relation("Extrato", fields: [userId], references: [id], onDelete: Cascade)
+  userId         Int
+  valor          Int      // Ex: -50 (se gastou), +50 (se recebeu)
+  contexto       String   // Ex: 'presente_live', 'destaque_comentario', 'presente_recebido'
+  userAlvoId     Int?     // O ID do outro usuário envolvido
+  data_transacao DateTime @default(now())
+
+  @@map("extrato_pimentas")
+}
+
+// --- ★★★ MODELO NOVO 2: MENSAGENS DE CHAT ★★★ ---
+// (Este modelo salva as mensagens)
+model Message {
+  id         Int      @id @default(autoincrement())
+  content    String   @db.Text
+  createdAt  DateTime @default(now())
+  read       Boolean  @default(false) 
+
+  author     User     @relation("SentMessages", fields: [authorId], references: [id], onDelete: Cascade)
+  authorId   Int      @map("author_id")
+  receiver   User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId Int      @map("receiver_id")
+
+  @@map("messages")
+}
+
