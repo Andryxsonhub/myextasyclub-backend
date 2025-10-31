@@ -1,5 +1,5 @@
 // routes/userRoutes.js
-// --- ATUALIZADO (Fase 6: Adiciona Congelar/Excluir e Filtro de Status) ---
+// --- ATUALIZADO (Adiciona tipo_plano e status à rota /profile "me") ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -108,7 +108,7 @@ const deleteFromS3 = async (s3Key) => {
 
 // --- ROTAS DO USUÁRIO ---
 
-// Upload de fotos (Gratuito pode)
+// Upload de fotos
 router.post('/photos', checkAuth, upload.single('photo'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
@@ -123,7 +123,7 @@ router.post('/photos', checkAuth, upload.single('photo'), async (req, res) => {
     }
 });
 
-// Upload/Update de Avatar (Gratuito pode)
+// Upload/Update de Avatar
 router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
@@ -134,7 +134,7 @@ router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, re
             where: { userId: req.user.userId },
             update: { avatarUrl: fileUrl, avatarKey: s3Key },
             create: { userId: req.user.userId, avatarUrl: fileUrl, avatarKey: s3Key },
-            include: { user: { select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true } } }
+            include: { user: { select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
         });
         const userData = { ...updatedProfile.user, profilePictureUrl: updatedProfile.avatarUrl, coverPhotoUrl: updatedProfile.coverPhotoUrl, bio: updatedProfile.bio, location: updatedProfile.location, gender: updatedProfile.gender };
         res.json(userData);
@@ -144,7 +144,7 @@ router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, re
     }
 });
 
-// Upload/Update de Capa (Gratuito pode)
+// Upload/Update de Capa
 router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
@@ -155,7 +155,7 @@ router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res
             where: { userId: req.user.userId },
             update: { coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
             create: { userId: req.user.userId, coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
-            include: { user: { select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true } } }
+            include: { user: { select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
         });
         const userData = { ...updatedProfile.user, profilePictureUrl: updatedProfile.avatarUrl, coverPhotoUrl: updatedProfile.coverPhotoUrl, bio: updatedProfile.bio, location: updatedProfile.location, gender: updatedProfile.gender };
         res.json(userData);
@@ -165,14 +165,21 @@ router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res
     }
 });
 
-// Buscar perfil do usuário logado (Gratuito pode)
-// (Esta rota NÃO filtra por status, para que um usuário 'congelado' possa logar e reativar)
+// Buscar perfil do usuário logado (A ROTA "ME")
+// --- ATUALIZADO: Adiciona tipo_plano e status ---
 router.get('/profile', checkAuth, async (req, res) => {
     try {
         const loggedInUserId = req.user.userId;
         const userWithProfile = await prisma.user.findUnique({
             where: { id: loggedInUserId },
-            select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, profile: { select: { id: true, bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } } },
+            select: {
+                id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true,
+                // --- ★★★ NOSSOS NOVOS CAMPOS PARA O FRONTEND ★★★ ---
+                tipo_plano: true,
+                status: true,
+                // --- ★★★ FIM DOS NOVOS CAMPOS ★★★ ---
+                profile: { select: { id: true, bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } }
+            },
         });
         if (!userWithProfile) { return res.status(404).json({ message: 'Usuário não encontrado.' }); }
         let visitCount = 0;
@@ -183,7 +190,30 @@ router.get('/profile', checkAuth, async (req, res) => {
         let completionScore = 0;
         if (userWithProfile.profile?.avatarUrl) completionScore += 25; if (userWithProfile.profile?.bio) completionScore += 25; if (userWithProfile.interests) completionScore += 25; if (userWithProfile.profile?.location) completionScore += 25;
         const monthlyStats = { visits: visitCount, commentsReceived: 0, commentsMade: 0 };
-        const profileData = { id: userWithProfile.id, email: userWithProfile.email, name: userWithProfile.name, createdAt: userWithProfile.createdAt, lastSeenAt: userWithProfile.lastSeenAt, pimentaBalance: userWithProfile.pimentaBalance, interests: userWithProfile.interests, desires: userWithProfile.desires, fetishes: userWithProfile.fetishes, profilePictureUrl: userWithProfile.profile?.avatarUrl ?? null, coverPhotoUrl: userWithProfile.profile?.coverPhotoUrl ?? null, bio: userWithProfile.profile?.bio ?? null, location: userWithProfile.profile?.location ?? null, gender: userWithProfile.profile?.gender ?? null, certificationLevel: completionScore, monthlyStats: monthlyStats };
+
+        // Formata a resposta final para o frontend
+        const profileData = {
+            id: userWithProfile.id,
+            email: userWithProfile.email,
+            name: userWithProfile.name,
+            createdAt: userWithProfile.createdAt,
+            lastSeenAt: userWithProfile.lastSeenAt,
+            pimentaBalance: userWithProfile.pimentaBalance,
+            interests: userWithProfile.interests,
+            desires: userWithProfile.desires,
+            fetishes: userWithProfile.fetishes,
+            // Novos campos que o frontend precisa
+            tipo_plano: userWithProfile.tipo_plano,
+            status: userWithProfile.status,
+            // Campos do perfil
+            profilePictureUrl: userWithProfile.profile?.avatarUrl ?? null,
+            coverPhotoUrl: userWithProfile.profile?.coverPhotoUrl ?? null,
+            bio: userWithProfile.profile?.bio ?? null,
+            location: userWithProfile.profile?.location ?? null,
+            gender: userWithProfile.profile?.gender ?? null,
+            certificationLevel: completionScore,
+            monthlyStats: monthlyStats
+        };
         res.json(profileData);
     } catch (error) {
         console.error("Erro ao buscar perfil do usuário:", error);
@@ -192,20 +222,16 @@ router.get('/profile', checkAuth, async (req, res) => {
 });
 
 
-// Buscar perfil público de outro usuário (GET /api/users/profile/:id)
-// --- ATUALIZADO (Fase 6): Adicionado filtro de status: 'ativo' ---
+// Buscar perfil público de outro usuário
 router.get('/profile/:id', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
         const loggedInUserId = req.user.userId;
-
         if (isNaN(userId)) { return res.status(400).json({ message: "ID de usuário inválido." }); }
-
-        // Mudamos de findUnique para findFirst para poder adicionar o filtro de status
         const userWithProfile = await prisma.user.findFirst({
             where: {
                 id: userId,
-                status: 'ativo' // <-- SÓ MOSTRA USUÁRIOS ATIVOS
+                status: 'ativo' // Filtro de Status
             },
             select: {
                 id: true, name: true, createdAt: true, interests: true, desires: true, fetishes: true,
@@ -214,9 +240,7 @@ router.get('/profile/:id', checkAuth, async (req, res) => {
                 likesReceived: { where: { likerId: loggedInUserId }, select: { id: true } }
             }
         });
-
         if (!userWithProfile) { return res.status(404).json({ message: "Usuário não encontrado ou inativo." }); }
-
         const publicProfileData = {
             id: userWithProfile.id, name: userWithProfile.name, createdAt: userWithProfile.createdAt, interests: userWithProfile.interests, desires: userWithProfile.desires, fetishes: userWithProfile.fetishes,
             profilePictureUrl: userWithProfile.profile?.avatarUrl ?? null, coverPhotoUrl: userWithProfile.profile?.coverPhotoUrl ?? null, bio: userWithProfile.profile?.bio ?? null, location: userWithProfile.profile?.location ?? null, gender: userWithProfile.profile?.gender ?? null,
@@ -230,9 +254,8 @@ router.get('/profile/:id', checkAuth, async (req, res) => {
 });
 
 
-// Registrar visita no perfil (Gratuito pode)
+// Registrar visita no perfil
 router.post('/profile/:id/view', checkAuth, async (req, res) => {
-    // (Sem alteração, podemos registrar visita em qualquer perfil, mesmo que inativo)
     try {
         const viewedUserId = parseInt(req.params.id, 10); const viewerId = req.user.userId;
         if (viewedUserId === viewerId) { return res.status(200).json({ message: "Não é possível registrar visita no próprio perfil." }); }
@@ -246,9 +269,8 @@ router.post('/profile/:id/view', checkAuth, async (req, res) => {
     }
 });
 
-// ROTA DE LIKE (TOGGLE) (Gratuito pode)
+// ROTA DE LIKE (TOGGLE)
 router.post('/profile/:id/like', checkAuth, async (req, res) => {
-    // (Sem alteração, podemos curtir)
     try {
         const likedUserId = parseInt(req.params.id, 10); const likerId = req.user.userId;
         if (isNaN(likedUserId)) { return res.status(400).json({ message: "ID de usuário inválido." }); }
@@ -270,8 +292,7 @@ router.post('/profile/:id/like', checkAuth, async (req, res) => {
     }
 });
 
-// Buscar usuários online (Gratuito pode)
-// --- ATUALIZADO (Fase 6): Adicionado filtro de status: 'ativo' ---
+// Buscar usuários online
 router.get('/online', checkAuth, async (req, res) => {
     try {
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
@@ -279,7 +300,7 @@ router.get('/online', checkAuth, async (req, res) => {
             where: {
                 lastSeenAt: { gte: fifteenMinutesAgo },
                 id: { not: req.user.userId },
-                status: 'ativo' // <-- SÓ MOSTRA USUÁRIOS ATIVOS
+                status: 'ativo' // Filtro de Status
             },
             select: { id: true, name: true, profile: { select: { avatarUrl: true, gender: true } } },
             orderBy: { lastSeenAt: 'desc' }, take: 10,
@@ -292,17 +313,33 @@ router.get('/online', checkAuth, async (req, res) => {
     }
 });
 
-// Atualizar perfil (Gratuito pode)
+// Atualizar perfil
 router.put('/profile', checkAuth, async (req, res) => {
-    // (Sem alteração, o usuário atualiza o próprio perfil)
     try {
         const { name, interests, desires, fetishes, bio, location, gender } = req.body; const userId = req.user.userId;
         const updatedUserWithProfile = await prisma.user.update({
             where: { id: userId },
             data: { name: name, interests: interests, desires: desires, fetishes: fetishes, profile: { upsert: { create: { bio: bio, location: location, gender: gender }, update: { bio: bio, location: location, gender: gender } } } },
-            select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, profile: { select: { bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } } }
+            select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true, profile: { select: { bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } } }
         });
-        const profileData = { id: updatedUserWithProfile.id, email: updatedUserWithProfile.email, name: updatedUserWithProfile.name, createdAt: updatedUserWithProfile.createdAt, lastSeenAt: updatedUserWithProfile.lastSeenAt, pimentaBalance: updatedUserWithProfile.pimentaBalance, interests: updatedUserWithProfile.interests, desires: updatedUserWithProfile.desires, fetishes: updatedUserWithProfile.fetishes, profilePictureUrl: updatedUserWithProfile.profile?.avatarUrl ?? null, coverPhotoUrl: updatedUserWithProfile.profile?.coverPhotoUrl ?? null, bio: updatedUserWithProfile.profile?.bio ?? null, location: updatedUserWithProfile.profile?.location ?? null, gender: updatedUserWithProfile.profile?.gender ?? null };
+        const profileData = {
+            id: updatedUserWithProfile.id,
+            email: updatedUserWithProfile.email,
+            name: updatedUserWithProfile.name,
+            createdAt: updatedUserWithProfile.createdAt,
+            lastSeenAt: updatedUserWithProfile.lastSeenAt,
+            pimentaBalance: updatedUserWithProfile.pimentaBalance,
+            interests: updatedUserWithProfile.interests,
+            desires: updatedUserWithProfile.desires,
+            fetishes: updatedUserWithProfile.fetishes,
+            tipo_plano: updatedUserWithProfile.tipo_plano,
+            status: updatedUserWithProfile.status,
+            profilePictureUrl: updatedUserWithProfile.profile?.avatarUrl ?? null,
+            coverPhotoUrl: updatedUserWithProfile.profile?.coverPhotoUrl ?? null,
+            bio: updatedUserWithProfile.profile?.bio ?? null,
+            location: updatedUserWithProfile.profile?.location ?? null,
+            gender: updatedUserWithProfile.profile?.gender ?? null
+        };
         res.json(profileData);
     } catch (error) {
         console.error("Erro ao atualizar o perfil:", error);
@@ -310,18 +347,15 @@ router.put('/profile', checkAuth, async (req, res) => {
     }
 });
 
-// Rota de busca (Gratuito pode)
-// --- ATUALIZADO (Fase 6): Adicionado filtro de status: 'ativo' ---
+// Rota de busca
 router.get('/search', checkAuth, async (req, res) => {
     try {
         const { q } = req.query;
         let whereClause = {
-            status: 'ativo' // <-- SÓ MOSTRA USUÁRIOS ATIVOS
+            status: 'ativo' // Filtro de Status
         };
-
         if (q && typeof q === 'string' && q.trim()) {
             const searchTerm = q.trim();
-            // Adiciona a busca (OR) dentro do filtro (AND) de status
             whereClause = {
                 AND: [
                     { status: 'ativo' },
@@ -347,7 +381,7 @@ router.get('/search', checkAuth, async (req, res) => {
     }
 });
 
-// Buscar fotos do usuário logado (Gratuito pode)
+// Buscar fotos do usuário logado
 router.get('/photos', checkAuth, async (req, res) => {
     try {
         const photos = await prisma.photo.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -358,7 +392,7 @@ router.get('/photos', checkAuth, async (req, res) => {
     }
 });
 
-// Buscar vídeos do usuário logado (Precisa ser PAGO)
+// Buscar vídeos do usuário logado
 router.get('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
     try {
         const videos = await prisma.video.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -369,8 +403,7 @@ router.get('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (re
     }
 });
 
-// Buscar mídias de OUTROS usuários (Gratuito pode ver fotos)
-// --- ATUALIZADO (Fase 6): Só busca fotos de usuários ATIVOS ---
+// Buscar mídias de OUTROS usuários (fotos)
 router.get('/user/:userId/photos', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
@@ -378,7 +411,7 @@ router.get('/user/:userId/photos', checkAuth, async (req, res) => {
         const photos = await prisma.photo.findMany({
             where: {
                 authorId: userId,
-                author: { status: 'ativo' } // <-- SÓ MOSTRA FOTOS DE USUÁRIOS ATIVOS
+                author: { status: 'ativo' } // Filtro de Status
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -388,8 +421,7 @@ router.get('/user/:userId/photos', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao buscar fotos do usuário." });
     }
 });
-// Buscar vídeos de OUTROS usuários (Precisa ser PAGO)
-// --- ATUALIZADO (Fase 6): Só busca vídeos de usuários ATIVOS ---
+// Buscar mídias de OUTROS usuários (vídeos)
 router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
@@ -397,7 +429,7 @@ router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual'
         const videos = await prisma.video.findMany({
             where: {
                 authorId: userId,
-                author: { status: 'ativo' } // <-- SÓ MOSTRA VÍDEOS DE USUÁRIOS ATIVOS
+                author: { status: 'ativo' } // Filtro de Status
             },
             orderBy: { createdAt: 'desc' }
         });
@@ -408,7 +440,7 @@ router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual'
     }
 });
 
-// Upload de vídeo (Precisa ser PAGO)
+// Upload de vídeo
 router.post('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), upload.single('video'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
@@ -426,7 +458,7 @@ router.post('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), upload.s
     }
 });
 
-// Deletar foto (Gratuito pode)
+// Deletar foto
 router.delete('/photos/:id', checkAuth, async (req, res) => {
     try {
         const { id } = req.params; const photoId = parseInt(id, 10); const userId = req.user.userId;
@@ -457,20 +489,19 @@ router.delete('/videos/:id', checkAuth, async (req, res) => {
         console.error("Erro ao apagar o vídeo:", error);
         if (error.code === 'P2025') { return res.status(404).json({ message: 'Vídeo não encontrado.' }); }
         res.status(500).json({ message: "Erro interno do servidor ao apagar vídeo." });
+        Note
     }
 });
 
-// GET /api/users/:id/followers (Quem segue o usuário :id)
-// --- ATUALIZADO (Fase 6): Só mostra seguidores ATIVOS ---
+// GET /api/users/:id/followers
 router.get('/:id/followers', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
         if (isNaN(userId)) { return res.status(400).json({ message: "ID de usuário inválido." }); }
-
         const follows = await prisma.follow.findMany({
             where: {
                 followingId: userId,
-                follower: { status: 'ativo' } // <-- SÓ MOSTRA SEGUIDORES ATIVOS
+                follower: { status: 'ativo' } // Filtro de Status
             },
             select: {
                 follower: {
@@ -483,7 +514,6 @@ router.get('/:id/followers', checkAuth, async (req, res) => {
             },
             orderBy: { createdAt: 'desc' }
         });
-
         const followers = follows.map(f => ({
             id: f.follower.id,
             name: f.follower.name,
@@ -496,17 +526,15 @@ router.get('/:id/followers', checkAuth, async (req, res) => {
     }
 });
 
-// GET /api/users/:id/following (Quem o usuário :id segue)
-// --- ATUALIZADO (Fase 6): Só mostra quem ele segue que está ATIVO ---
+// GET /api/users/:id/following
 router.get('/:id/following', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
         if (isNaN(userId)) { return res.status(400).json({ message: "ID de usuário inválido." }); }
-
         const follows = await prisma.follow.findMany({
             where: {
                 followerId: userId,
-                following: { status: 'ativo' } // <-- SÓ MOSTRA QUEM ELE SEGUE QUE ESTÁ ATIVO
+                following: { status: 'ativo' } // Filtro de Status
             },
             select: {
                 following: {
@@ -519,7 +547,6 @@ router.get('/:id/following', checkAuth, async (req, res) => {
             },
             orderBy: { createdAt: 'desc' }
         });
-
         const following = follows.map(f => ({
             id: f.following.id,
             name: f.following.name,
@@ -532,17 +559,15 @@ router.get('/:id/following', checkAuth, async (req, res) => {
     }
 });
 
-// GET /api/users/:id/likers (Quem curtiu o usuário :id)
-// --- ATUALIZADO (Fase 6): Só mostra 'likers' ATIVOS ---
+// GET /api/users/:id/likers
 router.get('/:id/likers', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
         if (isNaN(userId)) { return res.status(400).json({ message: "ID de usuário inválido." }); }
-
         const likes = await prisma.like.findMany({
             where: {
                 likedUserId: userId,
-                liker: { status: 'ativo' } // <-- SÓ MOSTRA QUEM CURTIU E ESTÁ ATIVO
+                liker: { status: 'ativo' } // Filtro de Status
             },
             select: {
                 liker: {
@@ -555,7 +580,6 @@ router.get('/:id/likers', checkAuth, async (req, res) => {
             },
             orderBy: { createdAt: 'desc' }
         });
-
         const likers = likes.map(l => ({
             id: l.liker.id,
             name: l.liker.name,
@@ -587,9 +611,7 @@ router.post('/congelar', checkAuth, async (req, res) => {
             }
         });
 
-        // (Aqui, você também invalidaria o token JWT, mas isso é mais complexo)
-        // Por enquanto, o frontend deve forçar o logout.
-
+        // O frontend deve forçar o logout após esta chamada
         res.status(200).json({ message: 'Conta congelada com sucesso.' });
 
     } catch (error) {
@@ -638,9 +660,8 @@ router.delete('/excluir', checkAuth, async (req, res) => {
                 }
             });
 
-            // NOTA: As fotos, vídeos, posts, etc., continuarão existindo,
-            // mas agora estarão ligados ao "Usuário Excluído".
-            // Se você quisesse apagar TUDO, teríamos que fazer `tx.photo.deleteMany(...)` etc.
+            // Nota: As mídias (fotos, vídeos) continuarão existindo
+            // e agora apontarão para "Usuário Excluido".
         });
 
         res.status(200).json({ message: 'Conta excluída permanentemente com sucesso.' });
@@ -657,3 +678,4 @@ router.delete('/excluir', checkAuth, async (req, res) => {
 // ==========================================
 
 module.exports = router;
+
