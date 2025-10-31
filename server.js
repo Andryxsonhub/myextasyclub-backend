@@ -1,5 +1,5 @@
 // server.js
-// --- CÓDIGO 100% CORRIGIDO (Linhas 19 e 97) ---
+// --- CÓDIGO ATUALIZADO (com messageRoutes) ---
 
 require('dotenv').config();
 
@@ -20,9 +20,9 @@ const liveRoutes = require('./routes/liveRoutes');
 const productRoutes = require('./routes/productRoutes');
 const mediaRoutes = require('./routes/mediaRoutes');
 const interactionRoutes = require('./routes/interactionRoutes');
+const messageRoutes = require('./routes/messageRoutes'); // --- NOVO (1/2) ---
 
 // Middlewares
-// --- CORREÇÃO 1/2: Importando 'checkAuth' de dentro do objeto ---
 const { checkAuth } = require('./middleware/authMiddleware'); 
 const updateLastSeen = require('./middleware/updateLastSeen');
 
@@ -89,7 +89,6 @@ const io = new Server(server, {
 // 4) ROTAS PROTEGIDAS (Exigem Login)
 // ======================
 // Aplica authMiddleware e updateLastSeen para todas as rotas abaixo
-// --- CORREÇÃO 2/2: Usando a função 'checkAuth' em vez do objeto ---
 app.use(checkAuth); 
 app.use(updateLastSeen); 
 
@@ -97,9 +96,10 @@ app.use('/api/media', mediaRoutes);
 app.use('/api/pimentas', pimentaRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/posts', postRoutes);
-app.use('/api/payments', paymentRoutes); // Rotas de pagamento agora protegidas
-app.use('/api/lives', liveRoutes(io)); // Passa a instância 'io' para as rotas de live
+app.use('/api/payments', paymentRoutes);
+app.use('/api/lives', liveRoutes(io)); 
 app.use('/api/interactions', interactionRoutes);
+app.use('/api/messages', messageRoutes(io)); // --- NOVO (2/2) ---
 
 
 // Endpoint de perfil do usuário autenticado
