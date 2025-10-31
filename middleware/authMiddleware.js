@@ -1,11 +1,11 @@
 // middleware/authMiddleware.js
-// --- VERSÃO ATUALIZADA (COM O PORTEIRO 3: checkMessageQuota) ---
+// --- VERSÃO ATUALIZADA (COM OS 3 PORTEIROS) ---
 
 const jwt = require('jsonwebtoken');
 const prisma = require('../lib/prisma'); 
 
 // -----------------------------------------------------------------
-// PORTEIRO 1: "Está logado?"
+// PORTEIRO 1: "Está logado?" (checkAuth)
 // -----------------------------------------------------------------
 const checkAuth = (req, res, next) => {
   // Permitir requisições OPTIONS passarem
@@ -34,7 +34,7 @@ const checkAuth = (req, res, next) => {
 };
 
 // -----------------------------------------------------------------
-// PORTEIRO 2: "Tem plano pago?"
+// PORTEIRO 2: "Tem plano pago?" (checkPlanAccess)
 // -----------------------------------------------------------------
 const checkPlanAccess = (planosPermitidos) => {
     
@@ -100,7 +100,7 @@ const checkPlanAccess = (planosPermitidos) => {
 };
 
 // -----------------------------------------------------------------
-// PORTEIRO 3: "Pode enviar mensagem?"
+// PORTEIRO 3: "Pode enviar mensagem?" (checkMessageQuota)
 // -----------------------------------------------------------------
 /**
  * Verifica se o usuário tem permissão para enviar uma mensagem,
@@ -111,10 +111,11 @@ const checkMessageQuota = async (req, res, next) => {
     try {
         const userId = req.user.userId;
 
-        // 1. Busca os dados ATUALIZADOS do usuário
+        // 1. Busca os dados ATUALIZADOS do usuário (incluindo saldo_pimentas)
         const usuario = await prisma.user.findUnique({
             where: { id: userId },
-            select: { tipo_plano: true, saldo_pimentas: true }
+            // (Usando o nome da coluna do seu schema.prisma)
+            select: { tipo_plano: true, pimentaBalance: true } 
         });
 
         if (!usuario) {
@@ -128,19 +129,18 @@ const checkMessageQuota = async (req, res, next) => {
         }
 
         // 3. REGRA: Plano 'mensal' (Ex: 20 mensagens / 30 dias)
-        //    (Plano 'gratuito' pula direto para a checagem de pimentas)
-        const LIMITE_MENSAL = 20; // << CONFIRMAR ESTE VALOR
+        const LIMITE_MENSAL = 20; // (Usando o limite que sugerimos)
 
         if (usuario.tipo_plano === 'mensal') {
             const hoje = new Date();
             const dataInicioCiclo = new Date();
             dataInicioCiclo.setDate(hoje.getDate() - 30); // Calcula 30 dias atrás
 
-            // Consulta o banco para contar as mensagens enviadas nos últimos 30 dias
-            const messageCount = await prisma.NOME_TABELA_MENSAGENS.count({
+            // (Usando os nomes que criamos no schema.prisma)
+            const messageCount = await prisma.message.count({
                 where: {
-                    COLUNA_REMETENTE: userId,
-                    COLUNA_TIMESTAMP: { gte: dataInicioCiclo }
+                    authorId: userId,         // Coluna do Remetente
+                    createdAt: { gte: dataInicioCiclo } // Coluna da Data
                 }
             });
 
@@ -151,7 +151,8 @@ const checkMessageQuota = async (req, res, next) => {
         }
 
         // 4. REGRA: Se for 'gratuito' OU 'mensal' (sem franquia), checa Pimentas
-        if (usuario.saldo_pimentas > 0) {
+        // (Usando 'pimentaBalance' do seu schema.prisma)
+        if (usuario.pimentaBalance > 0) {
             // O usuário TEM pimentas para gastar
             req.messageChargeType = 'pimenta'; // Informa ao controller que DEVE cobrar pimenta
             return next(); // Pode passar

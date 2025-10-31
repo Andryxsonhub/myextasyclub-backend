@@ -20,7 +20,7 @@ const liveRoutes = require('./routes/liveRoutes');
 const productRoutes = require('./routes/productRoutes');
 const mediaRoutes = require('./routes/mediaRoutes');
 const interactionRoutes = require('./routes/interactionRoutes');
-const messageRoutes = require('./routes/messageRoutes'); // --- NOVO (1/2) ---
+const messageRoutes = require('./routes/messageRoutes'); // --- LINHA NECESSÁRIA (1/2) ---
 
 // Middlewares
 const { checkAuth } = require('./middleware/authMiddleware'); 
@@ -88,7 +88,6 @@ const io = new Server(server, {
 // ======================
 // 4) ROTAS PROTEGIDAS (Exigem Login)
 // ======================
-// Aplica authMiddleware e updateLastSeen para todas as rotas abaixo
 app.use(checkAuth); 
 app.use(updateLastSeen); 
 
@@ -99,7 +98,7 @@ app.use('/api/posts', postRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/lives', liveRoutes(io)); 
 app.use('/api/interactions', interactionRoutes);
-app.use('/api/messages', messageRoutes(io)); // --- NOVO (2/2) ---
+app.use('/api/messages', messageRoutes(io)); // --- LINHA NECESSÁRIA (2/2) ---
 
 
 // Endpoint de perfil do usuário autenticado
@@ -121,7 +120,7 @@ app.get('/api/auth/me', async (req, res) => {
   } catch (error) {
     console.error("Erro ao buscar dados do usuário:", error);
     res.status(500).json({ message: "Erro interno do servidor." });
-  }
+A }
 });
 
 // Chat (Socket.IO)
