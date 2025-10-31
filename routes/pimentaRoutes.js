@@ -4,18 +4,19 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../lib/prisma');
-// Importa o porteiro (vamos proteger a rota de 'packages' também)
-const { checkAuth } = require('../middleware/authMiddleware'); 
+// --- ★★★ CORREÇÃO: Importando o porteiro 'checkAuth' ★★★ ---
+const { checkAuth } = require('../middleware/authMiddleware');
 
 // ===============================================================
-// ROTA 1: Buscar todos os pacotes de pimentas (Protegida)
+// ROTA 1: Buscar todos os pacotes de pimentas
 // ===============================================================
 // GET /api/pimentas/packages
-router.get('/packages', checkAuth, async (req, res) => { // Protegida por checkAuth
+// --- ★★★ CORREÇÃO: Adicionando o porteiro 'checkAuth' ★★★ ---
+router.get('/packages', checkAuth, async (req, res) => { 
   try {
     const packages = await prisma.pimentaPackage.findMany({
       orderBy: {
-        priceInCents: 'asc', // Ordena do mais barato para o mais caro
+        priceInCents: 'asc', 
       },
     });
     res.status(200).json(packages);
@@ -26,7 +27,7 @@ router.get('/packages', checkAuth, async (req, res) => { // Protegida por checkA
 });
 
 // ===============================================================
-// ROTA 2: Transferir pimentas (Dar Presente / Gorjeta) (NOVA)
+// ROTA 2: Transferir pimentas (Dar Presente) (NOVA)
 // ===============================================================
 // POST /api/pimentas/transferir
 router.post('/transferir', checkAuth, async (req, res) => {
@@ -57,7 +58,6 @@ router.post('/transferir', checkAuth, async (req, res) => {
         const [doador, receptor] = await prisma.$transaction(async (tx) => {
             
             // 1. Debita (Tira) pimentas do Doador
-            // (Usando 'pimentaBalance' do seu schema)
             const doadorUpdate = await tx.user.update({
                 where: { 
                     id: doadorId,
@@ -81,7 +81,7 @@ router.post('/transferir', checkAuth, async (req, res) => {
             });
 
             // 3. Registra no Extrato (para o Doador)
-            // (Usando o 'ExtratoPimentas' que criamos no schema)
+            // (Usando o 'model ExtratoPimentas' que adicionamos ao schema)
             await tx.extratoPimentas.create({
                 data: {
                     userId: doadorId,
@@ -127,4 +127,3 @@ router.post('/transferir', checkAuth, async (req, res) => {
 });
 
 module.exports = router;
-
