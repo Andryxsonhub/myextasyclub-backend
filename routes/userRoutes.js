@@ -1,5 +1,5 @@
 // routes/userRoutes.js
-// --- ATUALIZADO (Marca d'água em Mosaico/Tile) ---
+// --- ATUALIZADO (Marca d'água em Mosaico Corrigida e Opcional) ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -31,7 +31,6 @@ const createWatermarkSvg = (username, date) => {
     const svgText = `
     <svg width="400" height="100">
       <style>
-      /* Ajustei a opacidade de 0.5 para 0.3, pois vai se repetir */
       .title { fill: rgba(255, 255, 255, 0.3); font-size: 24px; font-family: Arial, sans-serif; font-weight: bold; }
       </style>
       <text x="10" y="40" class="title">${username}</text>
@@ -41,7 +40,7 @@ const createWatermarkSvg = (username, date) => {
     return Buffer.from(svgText);
 };
 
-// --- (Função addWatermark - Lógica de Mosaico) ---
+// --- (Função addWatermark - Lógica de Mosaico CORRIGIDA) ---
 const addWatermark = async (originalImageBuffer, username) => {
     const formattedDate = new Date().toLocaleDateString('pt-BR');
     
@@ -52,22 +51,19 @@ const addWatermark = async (originalImageBuffer, username) => {
     try {
         // 1. Criamos o SVG da marca d'água (400x100)
         const watermarkSvg = createWatermarkSvg(username, formattedDate);
-
-        // 2. [REMOVEMOS O REDIMENSIONAMENTO]
-        // Não vamos mais redimensionar a marca d'água para 50% da imagem.
-        // Vamos usar a original (400x100) para o mosaico.
+        
+        // 2. [CORREÇÃO BUG AVATAR]: Redimensionamos a marca d'água para um tamanho
+        //    menor (150px) ANTES de aplicar o mosaico. Isso evita erros
+        //    com imagens pequenas (como avatares).
+        const watermarkBuffer = await sharp(watermarkSvg)
+            .resize({ width: 150 }) // Reduz o tamanho da "peça" do mosaico
+            .toBuffer();
 
         // 3. Aplicamos a marca d'água
         return sharp(originalImageBuffer)
             .composite([{
-                // Usamos o SVG original (pequeno)
-                input: watermarkSvg, 
-                
-                // A MÁGICA: Diz ao Sharp para repetir a marca d'água
-                tile: true, 
-                
-                // Removemos o 'gravity', pois 'tile' cobre a imagem toda
-                // gravity: 'southwest', 
+                input: watermarkBuffer, // Usa a peça redimensionada
+                tile: true, // Repete em mosaico
             }])
             .toBuffer();
 
@@ -77,18 +73,14 @@ const addWatermark = async (originalImageBuffer, username) => {
     }
 };
 
-// =======================================================
-// ▲▲▲ FIM DAS ALTERAÇÕES ▲▲▲
-// =======================================================
-
-
-// --- (Função uploadToS3 - Sem Alteração) ---
-const uploadToS3 = async (file, folder, user) => {
+// --- (Função uploadToS3 - AGORA É OPCIONAL) ---
+// Adicionamos 'applyWatermark = true' como último parâmetro
+const uploadToS3 = async (file, folder, user, applyWatermark = true) => {
     const userNameForWatermark = user?.name || `user-${user.userId || 'unknown'}`;
     let bufferToUpload = file.buffer;
 
-    // Esta parte CHAMA a função 'addWatermark' que acabamos de corrigir
-    if (file.mimetype.startsWith('image/')) {
+    // SÓ aplica a marca d'água se 'applyWatermark' for true
+    if (file.mimetype.startsWith('image/') && applyWatermark) {
         try {
             bufferToUpload = await addWatermark(file.buffer, userNameForWatermark);
         } catch (watermarkError) {
@@ -96,6 +88,7 @@ const uploadToS3 = async (file, folder, user) => {
             throw new Error("Falha ao processar imagem para marca d'água.");
         }
     }
+    // Se 'applyWatermark' for false, ele pula direto para o upload
 
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = `${folder}-${user?.userId || 'unknown'}-${uniqueSuffix}${path.extname(file.originalname)}`;
@@ -111,6 +104,10 @@ const uploadToS3 = async (file, folder, user) => {
     const fileUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
     return { fileUrl, s3Key };
 };
+
+// =======================================================
+// ▲▲▲ FIM DAS ALTERAÇÕES ▲▲▲
+// =======================================================
 
 // --- (Função deleteFromS3 - Sem Alteração) ---
 const deleteFromS3 = async (s3Key) => {
@@ -136,12 +133,13 @@ const deleteFromS3 = async (s3Key) => {
 // --- Fim das Funções Auxiliares ---
 
 
-// --- ROTAS DO USUÁRIO (Sem Alteração) ---
+// --- ROTAS DO USUÁRIO (Alterações nas chamadas S3) ---
 
-// Upload de fotos
+// Upload de fotos (Mantém marca d'água)
 router.post('/photos', checkAuth, upload.single('photo'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
+        // uploadToS3(..., true) // 'true' é o padrão, então não precisamos passar
         const { fileUrl, s3Key } = await uploadToS3(req.file, 'photos', { userId: req.user.userId, name: req.user.name });
         const newPhoto = await prisma.photo.create({
             data: { url: fileUrl, key: s3Key, description: req.body.description, authorId: req.user.userId }
@@ -153,12 +151,13 @@ router.post('/photos', checkAuth, upload.single('photo'), async (req, res) => {
     }
 });
 
-// Upload/Update de Avatar
+// Upload/Update de Avatar (Mantém marca d'água)
 router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
         const currentProfile = await prisma.profile.findUnique({ where: { userId: req.user.userId }, select: { avatarKey: true } });
         if (currentProfile?.avatarKey) { await deleteFromS3(currentProfile.avatarKey); }
+        // uploadToS3(..., true) // 'true' é o padrão
         const { fileUrl, s3Key } = await uploadToS3(req.file, 'avatars', { userId: req.user.userId, name: req.user.name });
         const updatedProfile = await prisma.profile.upsert({
             where: { userId: req.user.userId },
@@ -174,13 +173,18 @@ router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, re
     }
 });
 
-// Upload/Update de Capa
+// Upload/Update de Capa (REMOVE marca d'água)
 router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
         const currentProfile = await prisma.profile.findUnique({ where: { userId: req.user.userId }, select: { coverPhotoKey: true } });
         if (currentProfile?.coverPhotoKey) { await deleteFromS3(currentProfile.coverPhotoKey); }
-        const { fileUrl, s3Key } = await uploadToS3(req.file, 'covers', { userId: req.user.userId, name: req.user.name });
+        
+        // =======================================================
+        // ▼▼▼ ALTERAÇÃO AQUI: Passamos 'false' para NÃO aplicar a marca d'água ▼▼▼
+        const { fileUrl, s3Key } = await uploadToS3(req.file, 'covers', { userId: req.user.userId, name: req.user.name }, false);
+        // =======================================================
+
         const updatedProfile = await prisma.profile.upsert({
             where: { userId: req.user.userId },
             update: { coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
@@ -196,7 +200,7 @@ router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res
 });
 
 // Buscar perfil do usuário logado (A ROTA "ME")
-// --- ATUALIZADO: Adiciona tipo_plano e status ---
+// (Sem alteração)
 router.get('/profile', checkAuth, async (req, res) => {
     try {
         const loggedInUserId = req.user.userId;
@@ -204,10 +208,8 @@ router.get('/profile', checkAuth, async (req, res) => {
             where: { id: loggedInUserId },
             select: {
                 id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true,
-                // --- ★★★ NOSSOS NOVOS CAMPOS PARA O FRONTEND ★★★ ---
                 tipo_plano: true,
                 status: true,
-                // --- ★★★ FIM DOS NOVOS CAMPOS ★★★ ---
                 profile: { select: { id: true, bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } }
             },
         });
@@ -232,10 +234,8 @@ router.get('/profile', checkAuth, async (req, res) => {
             interests: userWithProfile.interests,
             desires: userWithProfile.desires,
             fetishes: userWithProfile.fetishes,
-            // Novos campos que o frontend precisa
             tipo_plano: userWithProfile.tipo_plano,
             status: userWithProfile.status,
-            // Campos do perfil
             profilePictureUrl: userWithProfile.profile?.avatarUrl ?? null,
             coverPhotoUrl: userWithProfile.profile?.coverPhotoUrl ?? null,
             bio: userWithProfile.profile?.bio ?? null,
@@ -253,6 +253,7 @@ router.get('/profile', checkAuth, async (req, res) => {
 
 
 // Buscar perfil público de outro usuário
+// (Sem alteração)
 router.get('/profile/:id', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -285,6 +286,7 @@ router.get('/profile/:id', checkAuth, async (req, res) => {
 
 
 // Registrar visita no perfil
+// (Sem alteração)
 router.post('/profile/:id/view', checkAuth, async (req, res) => {
     try {
         const viewedUserId = parseInt(req.params.id, 10); const viewerId = req.user.userId;
@@ -300,6 +302,7 @@ router.post('/profile/:id/view', checkAuth, async (req, res) => {
 });
 
 // ROTA DE LIKE (TOGGLE)
+// (Sem alteração)
 router.post('/profile/:id/like', checkAuth, async (req, res) => {
     try {
         const likedUserId = parseInt(req.params.id, 10); const likerId = req.user.userId;
@@ -323,6 +326,7 @@ router.post('/profile/:id/like', checkAuth, async (req, res) => {
 });
 
 // Buscar usuários online
+// (Sem alteração)
 router.get('/online', checkAuth, async (req, res) => {
     try {
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
@@ -344,6 +348,7 @@ router.get('/online', checkAuth, async (req, res) => {
 });
 
 // Atualizar perfil
+// (Sem alteração)
 router.put('/profile', checkAuth, async (req, res) => {
     try {
         const { name, interests, desires, fetishes, bio, location, gender } = req.body; const userId = req.user.userId;
@@ -378,6 +383,7 @@ router.put('/profile', checkAuth, async (req, res) => {
 });
 
 // Rota de busca
+// (Sem alteração)
 router.get('/search', checkAuth, async (req, res) => {
     try {
         const { q } = req.query;
@@ -412,6 +418,7 @@ router.get('/search', checkAuth, async (req, res) => {
 });
 
 // Buscar fotos do usuário logado
+// (Sem alteração)
 router.get('/photos', checkAuth, async (req, res) => {
     try {
         const photos = await prisma.photo.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -423,6 +430,7 @@ router.get('/photos', checkAuth, async (req, res) => {
 });
 
 // Buscar vídeos do usuário logado
+// (Sem alteração)
 router.get('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
     try {
         const videos = await prisma.video.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -434,6 +442,7 @@ router.get('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (re
 });
 
 // Buscar mídias de OUTROS usuários (fotos)
+// (Sem alteração)
 router.get('/user/:userId/photos', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
@@ -452,6 +461,7 @@ router.get('/user/:userId/photos', checkAuth, async (req, res) => {
     }
 });
 // Buscar mídias de OUTROS usuários (vídeos)
+// (Sem alteração)
 router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
@@ -471,6 +481,7 @@ router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual'
 });
 
 // Upload de vídeo
+// (Sem alteração)
 router.post('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), upload.single('video'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
@@ -489,6 +500,7 @@ router.post('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), upload.s
 });
 
 // Deletar foto
+// (Sem alteração)
 router.delete('/photos/:id', checkAuth, async (req, res) => {
     try {
         const { id } = req.params; const photoId = parseInt(id, 10); const userId = req.user.userId;
@@ -505,6 +517,7 @@ router.delete('/photos/:id', checkAuth, async (req, res) => {
 });
 
 // ROTA DELETAR VÍDEO
+// (Sem alteração)
 router.delete('/videos/:id', checkAuth, async (req, res) => {
     try {
         const { id } = req.params; const videoId = parseInt(id, 10); const userId = req.user.userId;
@@ -519,11 +532,11 @@ router.delete('/videos/:id', checkAuth, async (req, res) => {
         console.error("Erro ao apagar o vídeo:", error);
         if (error.code === 'P2025') { return res.status(404).json({ message: 'Vídeo não encontrado.' }); }
         res.status(500).json({ message: "Erro interno do servidor ao apagar vídeo." });
-        Note
     }
 });
 
 // GET /api/users/:id/followers
+// (Sem alteração)
 router.get('/:id/followers', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -557,6 +570,7 @@ router.get('/:id/followers', checkAuth, async (req, res) => {
 });
 
 // GET /api/users/:id/following
+// (Sem alteração)
 router.get('/:id/following', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -590,6 +604,7 @@ router.get('/:id/following', checkAuth, async (req, res) => {
 });
 
 // GET /api/users/:id/likers
+// (Sem alteração)
 router.get('/:id/likers', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
