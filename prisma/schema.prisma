@@ -246,6 +246,26 @@ model Message {
   @@map("messages")
 }
 
+// --- NOVO MODELO PARA COMENTÁRIOS ---
+model Comment {
+  id        Int      @id @default(autoincrement())
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+
+  // Relação com o Autor (Usuário)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId  Int
+
+  // Relação com a Foto
+  // Tornamos opcional para poder adicionar vídeos no futuro
+  photo     Photo?   @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  photoId   Int?
+
+  // Relação com o Vídeo (opcional)
+  // video     Video?   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  // videoId   Int?
+}
+
 // Model de Extrato de Pimentas (Fase 5)
 model ExtratoPimentas {
   id             Int      @id @default(autoincrement())

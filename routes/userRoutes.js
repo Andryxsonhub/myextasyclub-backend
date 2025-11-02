@@ -1,17 +1,17 @@
 // routes/userRoutes.js
-// --- ATUALIZADO (Adiciona tipo_plano e status à rota /profile "me") ---
+// --- ATUALIZADO (Marca d'água em Mosaico/Tile) ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { checkAuth, checkPlanAccess } = require('../middleware/authMiddleware');
 const path = require('path');
 const multer = require('multer');
-const sharp = require('sharp');
+const sharp = require('sharp'); // <--- A biblioteca que usamos
 
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const router = express.Router();
 
-// --- (Funções de S3, Multer e Watermark - Sem Alteração) ---
+// --- (Funções de S3 e Multer - Sem Alteração) ---
 const s3Client = new S3Client({
     region: process.env.AWS_REGION,
     credentials: {
@@ -21,47 +21,73 @@ const s3Client = new S3Client({
 });
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+
+// =======================================================
+// ▼▼▼ FUNÇÃO DA MARCA D'ÁGUA (ALTERADA) ▼▼▼
+// =======================================================
+
+// --- (Função createWatermarkSvg - Opacidade ajustada) ---
 const createWatermarkSvg = (username, date) => {
     const svgText = `
-    <svg width="400" height="100">
-      <style>
-      .title { fill: rgba(255, 255, 255, 0.5); font-size: 24px; font-family: Arial, sans-serif; font-weight: bold; }
-      </style>
-      <text x="10" y="40" class="title">${username}</text>
-      <text x="10" y="70" class="title">${date}</text>
-    </svg>
-    `;
+    <svg width="400" height="100">
+      <style>
+      /* Ajustei a opacidade de 0.5 para 0.3, pois vai se repetir */
+      .title { fill: rgba(255, 255, 255, 0.3); font-size: 24px; font-family: Arial, sans-serif; font-weight: bold; }
+      </style>
+      <text x="10" y="40" class="title">${username}</text>
+      <text x="10" y="70" class="title">${date}</text>
+    </svg>
+    `;
     return Buffer.from(svgText);
 };
+
+// --- (Função addWatermark - Lógica de Mosaico) ---
 const addWatermark = async (originalImageBuffer, username) => {
     const formattedDate = new Date().toLocaleDateString('pt-BR');
+    
     if (!originalImageBuffer || originalImageBuffer.length === 0) {
         throw new Error("Buffer de imagem original inválido ou vazio.");
     }
+
     try {
-        const metadata = await sharp(originalImageBuffer).metadata();
-        const imageWidth = metadata.width;
-        if (!imageWidth) {
-            throw new Error("Não foi possível obter a largura da imagem.");
-        }
+        // 1. Criamos o SVG da marca d'água (400x100)
         const watermarkSvg = createWatermarkSvg(username, formattedDate);
-        const resizedWatermarkBuffer = await sharp(watermarkSvg)
-            .resize({ width: Math.round(imageWidth * 0.5) })
-            .toBuffer();
+
+        // 2. [REMOVEMOS O REDIMENSIONAMENTO]
+        // Não vamos mais redimensionar a marca d'água para 50% da imagem.
+        // Vamos usar a original (400x100) para o mosaico.
+
+        // 3. Aplicamos a marca d'água
         return sharp(originalImageBuffer)
             .composite([{
-                input: resizedWatermarkBuffer,
-                gravity: 'southwest',
+                // Usamos o SVG original (pequeno)
+                input: watermarkSvg, 
+                
+                // A MÁGICA: Diz ao Sharp para repetir a marca d'água
+                tile: true, 
+                
+                // Removemos o 'gravity', pois 'tile' cobre a imagem toda
+                // gravity: 'southwest', 
             }])
             .toBuffer();
+
     } catch (sharpError) {
         console.error("Erro no Sharp ao adicionar marca d'água:", sharpError);
         throw sharpError;
     }
 };
+
+// =======================================================
+// ▲▲▲ FIM DAS ALTERAÇÕES ▲▲▲
+// =======================================================
+
+
+// --- (Função uploadToS3 - Sem Alteração) ---
 const uploadToS3 = async (file, folder, user) => {
     const userNameForWatermark = user?.name || `user-${user.userId || 'unknown'}`;
     let bufferToUpload = file.buffer;
+
+    // Esta parte CHAMA a função 'addWatermark' que acabamos de corrigir
     if (file.mimetype.startsWith('image/')) {
         try {
             bufferToUpload = await addWatermark(file.buffer, userNameForWatermark);
@@ -70,9 +96,11 @@ const uploadToS3 = async (file, folder, user) => {
             throw new Error("Falha ao processar imagem para marca d'água.");
         }
     }
+
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = `${folder}-${user?.userId || 'unknown'}-${uniqueSuffix}${path.extname(file.originalname)}`;
     const s3Key = `${folder}/${filename}`;
+
     const command = new PutObjectCommand({
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: s3Key,
@@ -83,6 +111,8 @@ const uploadToS3 = async (file, folder, user) => {
     const fileUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
     return { fileUrl, s3Key };
 };
+
+// --- (Função deleteFromS3 - Sem Alteração) ---
 const deleteFromS3 = async (s3Key) => {
     if (!s3Key) {
         console.warn("Tentativa de deletar do S3 sem uma key.");
@@ -106,7 +136,7 @@ const deleteFromS3 = async (s3Key) => {
 // --- Fim das Funções Auxiliares ---
 
 
-// --- ROTAS DO USUÁRIO ---
+// --- ROTAS DO USUÁRIO (Sem Alteração) ---
 
 // Upload de fotos
 router.post('/photos', checkAuth, upload.single('photo'), async (req, res) => {
@@ -678,4 +708,3 @@ router.delete('/excluir', checkAuth, async (req, res) => {
 // ==========================================
 
 module.exports = router;
-
