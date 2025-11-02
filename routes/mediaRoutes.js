@@ -1,5 +1,6 @@
 // myextasyclub-backend/routes/mediaRoutes.js
 // --- CÓDIGO 100% CORRIGIDO ---
+// --- ATUALIZADO (Adiciona Rotas de Comentários) ---
 
 /**
  * @typedef {import('express').Request} Request
@@ -88,7 +89,7 @@ router.get('/photos/:id', async (req, res) => {
             where: { id: photoId },
             include: {
                 author: { select: { id: true, name: true, username: true, profile: { select: { avatarUrl: true } } } },
-                _count: { select: { likes: true } },
+                _count: { select: { likes: true, comments: true } }, // Adicionado _count: { comments: true }
                 likes: { where: { likerId: loggedInUserId || -1 }, select: { id: true } },
             },
         });
@@ -103,6 +104,7 @@ router.get('/photos/:id', async (req, res) => {
             content: photo.description, createdAt: photo.createdAt.toISOString(),
             author: { id: photo.author.id, name: photo.author.name || 'Usuário', profilePictureUrl: photo.author.profile?.avatarUrl },
             likeCount: parseInt(String(photo._count?.likes ?? 0), 10),
+            commentCount: parseInt(String(photo._count?.comments ?? 0), 10), // Adicionado commentCount
             isLikedByMe: photo.likes.length > 0,
         };
 
@@ -110,7 +112,6 @@ router.get('/photos/:id', async (req, res) => {
     } catch (/** @type {Error} */ error) {
         console.error(`Erro ao buscar foto ${photoId}:`, error);
         res.status(500).json({ error: 'Erro interno ao buscar foto.' });
-        S
     }
 });
 
@@ -132,7 +133,7 @@ router.get('/videos/:id', async (req, res) => {
             where: { id: videoId },
             include: {
                 author: { select: { id: true, name: true, username: true, profile: { select: { avatarUrl: true } } } },
-                _count: { select: { likes: true } },
+                _count: { select: { likes: true } }, // Adicionar comments aqui quando habilitar
                 likes: { where: { likerId: loggedInUserId || -1 }, select: { id: true } },
             },
         });
@@ -147,6 +148,7 @@ router.get('/videos/:id', async (req, res) => {
             content: video.description, createdAt: video.createdAt.toISOString(),
             author: { id: video.author.id, name: video.author.name || 'Usuário', profilePictureUrl: video.author.profile?.avatarUrl },
             likeCount: parseInt(String(video._count?.likes ?? 0), 10),
+            // commentCount: parseInt(String(video._count?.comments ?? 0), 10), // Adicionar quando habilitar
             isLikedByMe: video.likes.length > 0,
         };
 
@@ -205,7 +207,6 @@ router.post('/videos/:id/like', checkAuth, async (req, res) => {
             await prisma.like.create({ data: { likerId, likedVideoId: videoId } });
             const count = await prisma.like.count({ where: { likedVideoId: videoId } });
             res.status(201).json({ isLikedByMe: true, likeCount: count });
-            a
         }
     } catch (/** @type {Error} */ error) {
         console.error('Erro no toggle de curtir vídeo:', error);
@@ -213,7 +214,6 @@ router.post('/videos/:id/like', checkAuth, async (req, res) => {
             return res.status(404).json({ error: 'Vídeo não encontrado.' });
         }
         res.status(500).json({ error: 'Erro interno.' });
-        nbsp;
     }
 });
 
@@ -264,6 +264,129 @@ router.get('/videos/:id/likers', checkAuth, async (req, res) => {
         res.status(500).json({ error: 'Erro interno ao buscar curtidas.' });
     }
 });
+
+
+// =================================================================
+// ★★★ INÍCIO DAS NOVAS ROTAS DE COMENTÁRIOS (Fase 7) ★★★
+// =================================================================
+
+// ----------------------------------------------------
+// ROTA PARA BUSCAR COMENTÁRIOS DE UMA FOTO
+// ----------------------------------------------------
+// GET /api/media/photos/:photoId/comments
+router.get('/photos/:photoId/comments', checkAuth, async (req, res) => {
+    const photoId = parseInt(req.params.photoId, 10);
+    if (isNaN(photoId)) {
+        return res.status(400).json({ message: 'ID da foto inválido.' });
+    }
+
+    try {
+        const comments = await prisma.comment.findMany({
+            where: { photoId: photoId },
+            orderBy: { createdAt: 'desc' }, // Mais novos primeiro
+            include: {
+                author: {
+                    select: {
+                        id: true,
+                        name: true,
+                        profile: { select: { avatarUrl: true } }
+                    }
+                }
+            }
+        });
+
+        // Formatar os comentários para o frontend
+        const formattedComments = comments.map(comment => ({
+            id: comment.id,
+            text: comment.text,
+            createdAt: comment.createdAt,
+            author: {
+                id: comment.author.id,
+                name: comment.author.name || 'Usuário',
+                profilePictureUrl: comment.author.profile?.avatarUrl ?? null
+            }
+        }));
+
+        res.status(200).json(formattedComments);
+
+    } catch (error) {
+        console.error(`Erro ao buscar comentários da foto ${photoId}:`, error);
+        res.status(500).json({ message: 'Erro interno ao buscar comentários.' });
+    }
+});
+
+// ----------------------------------------------------
+// ROTA PARA CRIAR UM NOVO COMENTÁRIO EM UMA FOTO
+// ----------------------------------------------------
+// POST /api/media/photos/:photoId/comments
+router.post('/photos/:photoId/comments', checkAuth, async (req, res) => {
+    const photoId = parseInt(req.params.photoId, 10);
+    const authorId = req.user.userId;
+    const { text } = req.body;
+
+    if (isNaN(photoId)) {
+        return res.status(400).json({ message: 'ID da foto inválido.' });
+    }
+    if (!text || text.trim() === '') {
+        return res.status(400).json({ message: 'O texto do comentário não pode estar vazio.' });
+    }
+
+    try {
+        const newComment = await prisma.comment.create({
+            data: {
+                text: text,
+                authorId: authorId,
+                photoId: photoId
+            },
+            include: { // Inclui o autor já na criação
+                author: {
+                    select: {
+                        id: true,
+                        name: true,
+                        profile: { select: { avatarUrl: true } }
+                    }
+                }
+            }
+        });
+
+        // Formatar o novo comentário para enviar de volta
+        const formattedComment = {
+            id: newComment.id,
+            text: newComment.text,
+            createdAt: newComment.createdAt,
+            author: {
+                id: newComment.author.id,
+                name: newComment.author.name || 'Usuário',
+                profilePictureUrl: newComment.author.profile?.avatarUrl ?? null
+            }
+        };
+
+        // Também precisamos atualizar o contador de comentários na foto
+        // (Fazemos isso de forma assíncrona, não precisamos esperar)
+        prisma.photo.update({
+            where: { id: photoId },
+            data: {
+                // Esta é uma forma de atualizar, mas o _count no GET já deve ser suficiente
+                // Se precisarmos de um contador em tempo real, podemos adicionar
+            }
+        }).catch(err => console.error("Erro ao atualizar contagem de comentários:", err));
+
+
+        res.status(201).json(formattedComment); // 201 Created
+
+    } catch (error) {
+        // P2003: Foreign key constraint failed (a foto não existe)
+        if (error.code === 'P2003') {
+            return res.status(404).json({ message: 'Foto não encontrada.' });
+        }
+        console.error(`Erro ao criar comentário na foto ${photoId}:`, error);
+        res.status(500).json({ message: 'Erro interno ao criar comentário.' });
+    }
+});
+
+// =================================================================
+// ★★★ FIM DAS NOVAS ROTAS DE COMENTÁRIOS ★★★
+// =================================================================
 
 
 module.exports = router;
