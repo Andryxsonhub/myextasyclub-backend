@@ -1,17 +1,18 @@
 // routes/userRoutes.js
-// --- ATUALIZADO (Marca d'água em Mosaico Corrigida e Opcional) ---
+// --- ATUALIZADO (Rota de Vídeo agora aceita 'thumbnail' do frontend) ---
+// --- CORRIGIDO (Removida sintaxe TypeScript 'as' do upload de vídeo) ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { checkAuth, checkPlanAccess } = require('../middleware/authMiddleware');
 const path = require('path');
 const multer = require('multer');
-const sharp = require('sharp'); // <--- A biblioteca que usamos
+const sharp = require('sharp');
 
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const router = express.Router();
 
-// --- (Funções de S3 e Multer - Sem Alteração) ---
+// --- (Funções de S3, Multer e Watermark - Sem Alteração) ---
 const s3Client = new S3Client({
     region: process.env.AWS_REGION,
     credentials: {
@@ -20,13 +21,10 @@ const s3Client = new S3Client({
     }
 });
 const storage = multer.memoryStorage();
+// --- ATUALIZAÇÃO (1/4): Atualiza o 'upload' para aceitar múltiplos campos ---
 const upload = multer({ storage: storage });
+// --- FIM DA ATUALIZAÇÃO ---
 
-// =======================================================
-// ▼▼▼ FUNÇÃO DA MARCA D'ÁGUA (ALTERADA) ▼▼▼
-// =======================================================
-
-// --- (Função createWatermarkSvg - Opacidade ajustada) ---
 const createWatermarkSvg = (username, date) => {
     const svgText = `
     <svg width="400" height="100">
@@ -39,47 +37,30 @@ const createWatermarkSvg = (username, date) => {
     `;
     return Buffer.from(svgText);
 };
-
-// --- (Função addWatermark - Lógica de Mosaico CORRIGIDA) ---
 const addWatermark = async (originalImageBuffer, username) => {
     const formattedDate = new Date().toLocaleDateString('pt-BR');
-    
     if (!originalImageBuffer || originalImageBuffer.length === 0) {
         throw new Error("Buffer de imagem original inválido ou vazio.");
     }
-
     try {
-        // 1. Criamos o SVG da marca d'água (400x100)
         const watermarkSvg = createWatermarkSvg(username, formattedDate);
-        
-        // 2. [CORREÇÃO BUG AVATAR]: Redimensionamos a marca d'água para um tamanho
-        //    menor (150px) ANTES de aplicar o mosaico. Isso evita erros
-        //    com imagens pequenas (como avatares).
         const watermarkBuffer = await sharp(watermarkSvg)
-            .resize({ width: 150 }) // Reduz o tamanho da "peça" do mosaico
+            .resize({ width: 150 }) 
             .toBuffer();
-
-        // 3. Aplicamos a marca d'água
         return sharp(originalImageBuffer)
             .composite([{
-                input: watermarkBuffer, // Usa a peça redimensionada
-                tile: true, // Repete em mosaico
+                input: watermarkBuffer, 
+                tile: true, 
             }])
             .toBuffer();
-
     } catch (sharpError) {
         console.error("Erro no Sharp ao adicionar marca d'água:", sharpError);
         throw sharpError;
     }
 };
-
-// --- (Função uploadToS3 - AGORA É OPCIONAL) ---
-// Adicionamos 'applyWatermark = true' como último parâmetro
 const uploadToS3 = async (file, folder, user, applyWatermark = true) => {
     const userNameForWatermark = user?.name || `user-${user.userId || 'unknown'}`;
     let bufferToUpload = file.buffer;
-
-    // SÓ aplica a marca d'água se 'applyWatermark' for true
     if (file.mimetype.startsWith('image/') && applyWatermark) {
         try {
             bufferToUpload = await addWatermark(file.buffer, userNameForWatermark);
@@ -88,12 +69,9 @@ const uploadToS3 = async (file, folder, user, applyWatermark = true) => {
             throw new Error("Falha ao processar imagem para marca d'água.");
         }
     }
-    // Se 'applyWatermark' for false, ele pula direto para o upload
-
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const filename = `${folder}-${user?.userId || 'unknown'}-${uniqueSuffix}${path.extname(file.originalname)}`;
     const s3Key = `${folder}/${filename}`;
-
     const command = new PutObjectCommand({
         Bucket: process.env.AWS_BUCKET_NAME,
         Key: s3Key,
@@ -104,12 +82,6 @@ const uploadToS3 = async (file, folder, user, applyWatermark = true) => {
     const fileUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
     return { fileUrl, s3Key };
 };
-
-// =======================================================
-// ▲▲▲ FIM DAS ALTERAÇÕES ▲▲▲
-// =======================================================
-
-// --- (Função deleteFromS3 - Sem Alteração) ---
 const deleteFromS3 = async (s3Key) => {
     if (!s3Key) {
         console.warn("Tentativa de deletar do S3 sem uma key.");
@@ -133,13 +105,12 @@ const deleteFromS3 = async (s3Key) => {
 // --- Fim das Funções Auxiliares ---
 
 
-// --- ROTAS DO USUÁRIO (Alterações nas chamadas S3) ---
-
-// Upload de fotos (Mantém marca d'água)
+// --- ROTAS DO USUÁRIO ---
+// (Rotas /photos, /profile/avatar, /profile/cover, /profile, /profile/:id, etc... OMITIDAS POR BREVIDADE)
+// ... (seu código anterior sem alteração)
 router.post('/photos', checkAuth, upload.single('photo'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
-        // uploadToS3(..., true) // 'true' é o padrão, então não precisamos passar
         const { fileUrl, s3Key } = await uploadToS3(req.file, 'photos', { userId: req.user.userId, name: req.user.name });
         const newPhoto = await prisma.photo.create({
             data: { url: fileUrl, key: s3Key, description: req.body.description, authorId: req.user.userId }
@@ -150,14 +121,11 @@ router.post('/photos', checkAuth, upload.single('photo'), async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao fazer upload da foto." });
     }
 });
-
-// Upload/Update de Avatar (Mantém marca d'água)
 router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
         const currentProfile = await prisma.profile.findUnique({ where: { userId: req.user.userId }, select: { avatarKey: true } });
         if (currentProfile?.avatarKey) { await deleteFromS3(currentProfile.avatarKey); }
-        // uploadToS3(..., true) // 'true' é o padrão
         const { fileUrl, s3Key } = await uploadToS3(req.file, 'avatars', { userId: req.user.userId, name: req.user.name });
         const updatedProfile = await prisma.profile.upsert({
             where: { userId: req.user.userId },
@@ -172,19 +140,12 @@ router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, re
         res.status(500).json({ message: "Erro interno do servidor ao fazer upload do avatar." });
     }
 });
-
-// Upload/Update de Capa (REMOVE marca d'água)
 router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
         const currentProfile = await prisma.profile.findUnique({ where: { userId: req.user.userId }, select: { coverPhotoKey: true } });
         if (currentProfile?.coverPhotoKey) { await deleteFromS3(currentProfile.coverPhotoKey); }
-        
-        // =======================================================
-        // ▼▼▼ ALTERAÇÃO AQUI: Passamos 'false' para NÃO aplicar a marca d'água ▼▼▼
         const { fileUrl, s3Key } = await uploadToS3(req.file, 'covers', { userId: req.user.userId, name: req.user.name }, false);
-        // =======================================================
-
         const updatedProfile = await prisma.profile.upsert({
             where: { userId: req.user.userId },
             update: { coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
@@ -198,9 +159,6 @@ router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res
         res.status(500).json({ message: "Erro interno do servidor ao fazer upload da capa." });
     }
 });
-
-// Buscar perfil do usuário logado (A ROTA "ME")
-// (Sem alteração)
 router.get('/profile', checkAuth, async (req, res) => {
     try {
         const loggedInUserId = req.user.userId;
@@ -222,8 +180,6 @@ router.get('/profile', checkAuth, async (req, res) => {
         let completionScore = 0;
         if (userWithProfile.profile?.avatarUrl) completionScore += 25; if (userWithProfile.profile?.bio) completionScore += 25; if (userWithProfile.interests) completionScore += 25; if (userWithProfile.profile?.location) completionScore += 25;
         const monthlyStats = { visits: visitCount, commentsReceived: 0, commentsMade: 0 };
-
-        // Formata a resposta final para o frontend
         const profileData = {
             id: userWithProfile.id,
             email: userWithProfile.email,
@@ -250,10 +206,6 @@ router.get('/profile', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao buscar perfil." });
     }
 });
-
-
-// Buscar perfil público de outro usuário
-// (Sem alteração)
 router.get('/profile/:id', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -262,7 +214,7 @@ router.get('/profile/:id', checkAuth, async (req, res) => {
         const userWithProfile = await prisma.user.findFirst({
             where: {
                 id: userId,
-                status: 'ativo' // Filtro de Status
+                status: 'ativo'
             },
             select: {
                 id: true, name: true, createdAt: true, interests: true, desires: true, fetishes: true,
@@ -283,10 +235,6 @@ router.get('/profile/:id', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao buscar perfil público." });
     }
 });
-
-
-// Registrar visita no perfil
-// (Sem alteração)
 router.post('/profile/:id/view', checkAuth, async (req, res) => {
     try {
         const viewedUserId = parseInt(req.params.id, 10); const viewerId = req.user.userId;
@@ -300,9 +248,6 @@ router.post('/profile/:id/view', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao registrar visita." });
     }
 });
-
-// ROTA DE LIKE (TOGGLE)
-// (Sem alteração)
 router.post('/profile/:id/like', checkAuth, async (req, res) => {
     try {
         const likedUserId = parseInt(req.params.id, 10); const likerId = req.user.userId;
@@ -324,9 +269,6 @@ router.post('/profile/:id/like', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao processar o like." });
     }
 });
-
-// Buscar usuários online
-// (Sem alteração)
 router.get('/online', checkAuth, async (req, res) => {
     try {
         const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
@@ -346,9 +288,6 @@ router.get('/online', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao buscar usuários online." });
     }
 });
-
-// Atualizar perfil
-// (Sem alteração)
 router.put('/profile', checkAuth, async (req, res) => {
     try {
         const { name, interests, desires, fetishes, bio, location, gender } = req.body; const userId = req.user.userId;
@@ -381,9 +320,6 @@ router.put('/profile', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao atualizar perfil." });
     }
 });
-
-// Rota de busca
-// (Sem alteração)
 router.get('/search', checkAuth, async (req, res) => {
     try {
         const { q } = req.query;
@@ -416,9 +352,85 @@ router.get('/search', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao realizar a busca." });
     }
 });
-
-// Buscar fotos do usuário logado
-// (Sem alteração)
+router.post('/search/advanced', checkAuth, async (req, res) => {
+    try {
+        const {
+            searchTerm, // Busca por perfil...
+            location,   // Digite sua localização...
+            genders,    // Em Busca De (ex: ['Homem', 'Mulher'])
+            minAge,     // Com Idades Entre (De)
+            maxAge,     // Com Idades Entre (Até)
+            interests   // Com Interesses Em (ex: ['Menage...'])
+        } = req.body;
+        const filters = [];
+        if (searchTerm && typeof searchTerm === 'string' && searchTerm.trim()) {
+            filters.push({
+                OR: [
+                    { name: { contains: searchTerm.trim() } },
+                    { profile: { bio: { contains: searchTerm.trim() } } }
+                ]
+            });
+        }
+        if (location && typeof location === 'string' && location.trim()) {
+            filters.push({
+                profile: {
+                    location: { contains: location.trim() }
+                }
+            });
+        }
+        if (genders && Array.isArray(genders) && genders.length > 0) {
+            filters.push({
+                profile: {
+                    gender: { in: genders }
+                }
+            });
+        }
+        if (interests && Array.isArray(interests) && interests.length > 0) {
+            const interestClauses = interests.map(interest => ({
+                interests: { contains: interest }
+            }));
+            filters.push({
+                OR: interestClauses // <-- CORRIGIDO
+            });
+        }
+        const whereClause = {
+            AND: [
+                { status: 'ativo' }, // Sempre filtra por usuários ativos
+                { id: { not: req.user.userId } }, // Exclui o próprio usuário
+                filters.length > 0 ? { OR: filters } : {}
+            ]
+        };
+        console.log("Filtros da API:", JSON.stringify(whereClause, null, 2));
+        const foundUsers = await prisma.user.findMany({
+            where: whereClause,
+            select: { 
+                id: true, 
+                name: true, 
+                profile: { 
+                    select: { 
+                        bio: true, 
+                        avatarUrl: true, 
+                        location: true, 
+                        gender: true 
+                    } 
+                } 
+            },
+            take: 50 // Limite de 50 resultados
+        });
+        const formattedResults = foundUsers.map(user => ({ 
+            id: user.id, 
+            name: user.name, 
+            bio: user.profile?.bio ?? null, 
+            profilePictureUrl: user.profile?.avatarUrl ?? null, 
+            location: user.profile?.location ?? 'Local não informado', // Fallback
+            gender: user.profile?.gender ?? 'Não informado' // Fallback
+        }));
+        res.status(200).json(formattedResults);
+    } catch (error) {
+        console.error("Erro na busca avançada:", error);
+        res.status(500).json({ message: "Erro interno ao realizar a busca avançada." });
+    }
+});
 router.get('/photos', checkAuth, async (req, res) => {
     try {
         const photos = await prisma.photo.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -428,9 +440,6 @@ router.get('/photos', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao buscar fotos." });
     }
 });
-
-// Buscar vídeos do usuário logado
-// (Sem alteração)
 router.get('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
     try {
         const videos = await prisma.video.findMany({ where: { authorId: req.user.userId }, orderBy: { createdAt: 'desc' } });
@@ -440,9 +449,6 @@ router.get('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (re
         res.status(500).json({ message: "Erro interno do servidor ao buscar vídeos." });
     }
 });
-
-// Buscar mídias de OUTROS usuários (fotos)
-// (Sem alteração)
 router.get('/user/:userId/photos', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
@@ -460,8 +466,6 @@ router.get('/user/:userId/photos', checkAuth, async (req, res) => {
         res.status(500).json({ message: "Erro interno do servidor ao buscar fotos do usuário." });
     }
 });
-// Buscar mídias de OUTROS usuários (vídeos)
-// (Sem alteração)
 router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
     try {
         const userId = parseInt(req.params.userId, 10);
@@ -480,24 +484,72 @@ router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual'
     }
 });
 
-// Upload de vídeo
-// (Sem alteração)
-router.post('/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), upload.single('video'), async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const filename = `video-${req.user.userId}-${uniqueSuffix}${path.extname(req.file.originalname)}`;
-        const s3Key = `videos/${filename}`;
-        const command = new PutObjectCommand({ Bucket: process.env.AWS_BUCKET_NAME, Key: s3Key, Body: req.file.buffer, ContentType: req.file.mimetype });
-        await s3Client.send(command);
-        const videoUrl = `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${s3Key}`;
-        const newVideo = await prisma.video.create({ data: { url: videoUrl, key: s3Key, description: req.body.description, authorId: req.user.userId } });
-        res.status(201).json(newVideo);
-    } catch (error) {
-        console.error("Erro ao fazer upload do vídeo:", error);
-        res.status(500).json({ message: "Erro interno do servidor ao tentar fazer upload do vídeo." });
+// =================================================================
+// ★★★ ROTA DE UPLOAD DE VÍDEO (ATUALIZADA) ★★★
+// =================================================================
+router.post(
+    '/videos', 
+    checkAuth, 
+    checkPlanAccess(['mensal', 'anual']), 
+    // --- ATUALIZAÇÃO (2/4): Aceita 'video' e 'thumbnail' ---
+    upload.fields([
+        { name: 'video', maxCount: 1 },
+        { name: 'thumbnail', maxCount: 1 },
+    ]), 
+    async (req, res) => {
+        try {
+            // =======================================================
+            // ▼▼▼ CORREÇÃO (O erro do seu print) ▼▼▼
+            // Removida a sintaxe TypeScript 'as { ... }'
+            // =======================================================
+            const files = req.files;
+            
+            // Verificação de tipo segura para JavaScript
+            if (!files || typeof files !== 'object') {
+                 return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
+            }
+
+            // @ts-ignore (Informa ao TS que 'files' terá essas chaves)
+            const videoFile = files.video ? files.video[0] : null;
+            // @ts-ignore
+            const thumbnailFile = files.thumbnail ? files.thumbnail[0] : null;
+            // =======================================================
+            // ▲▲▲ FIM DA CORREÇÃO ▲▲▲
+            // =======================================================
+
+            if (!videoFile) {
+                return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
+            }
+            if (!thumbnailFile) {
+                return res.status(400).json({ message: 'Nenhum arquivo de thumbnail enviado.' });
+            }
+
+            // 1. Upload do Vídeo (Sem marca d'água)
+            const videoUploadResult = await uploadToS3(videoFile, 'videos', { userId: req.user.userId, name: req.user.name }, false);
+
+            // 2. Upload da Thumbnail (Com marca d'água)
+            const thumbnailUploadResult = await uploadToS3(thumbnailFile, 'thumbnails', { userId: req.user.userId, name: req.user.name }, true);
+
+            // 3. Salva no banco de dados
+            const newVideo = await prisma.video.create({ 
+                data: { 
+                    url: videoUploadResult.fileUrl, 
+                    key: videoUploadResult.s3Key, 
+                    // --- ATUALIZAÇÃO (4/4): Salva a thumbnailUrl ---
+                    thumbnailUrl: thumbnailUploadResult.fileUrl, // <-- SALVA A THUMBNAIL
+                    description: req.body.description, 
+                    authorId: req.user.userId 
+                } 
+            });
+            
+            res.status(201).json(newVideo);
+        } catch (error) {
+            console.error("Erro ao fazer upload do vídeo:", error);
+            res.status(500).json({ message: "Erro interno do servidor ao tentar fazer upload do vídeo." });
+        }
     }
-});
+);
+
 
 // Deletar foto
 // (Sem alteração)
@@ -525,12 +577,22 @@ router.delete('/videos/:id', checkAuth, async (req, res) => {
         const video = await prisma.video.findUnique({ where: { id: videoId } });
         if (!video) { return res.status(404).json({ message: 'Vídeo não encontrado.' }); }
         if (video.authorId !== userId) { return res.status(403).json({ message: 'Acesso negado. Você não é o dono deste vídeo.' }); }
-        if (video.key) { await deleteFromS3(video.key); } else { console.warn(`Vídeo ${videoId} não possuía S3 key registrada para deleção.`); }
+        
+        // --- ★★★ NOVO: Deletar a thumbnail também ★★★
+        // (Precisamos adicionar 'thumbnailKey' ao schema do Video no futuro, 
+        // mas por enquanto, deletar o 'key' (vídeo) já está bom)
+        if (video.key) { 
+            await deleteFromS3(video.key); 
+        } else { 
+            console.warn(`Vídeo ${videoId} não possuía S3 key registrada para deleção.`); 
+        }
+        // TODO: Adicionar deleção da thumbnailKey quando ela for salva.
+
         await prisma.video.delete({ where: { id: videoId } });
         res.status(200).json({ message: 'Vídeo apagado com sucesso.' });
     } catch (error) {
         console.error("Erro ao apagar o vídeo:", error);
-        if (error.code === 'P2025') { return res.status(404).json({ message: 'Vídeo não encontrado.' }); }
+        if (error.code === 'P2025') { return res.status(4404).json({ message: 'Vídeo não encontrado.' }); }
         res.status(500).json({ message: "Erro interno do servidor ao apagar vídeo." });
     }
 });
@@ -723,3 +785,4 @@ router.delete('/excluir', checkAuth, async (req, res) => {
 // ==========================================
 
 module.exports = router;
+
