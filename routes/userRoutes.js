@@ -1,6 +1,7 @@
 // routes/userRoutes.js
 // --- ATUALIZADO (Rota de Vídeo agora aceita 'thumbnail' do frontend) ---
 // --- CORRIGIDO (Removida sintaxe TypeScript 'as' do upload de vídeo) ---
+// --- CORRIGIDO (Marca d'água agora usa 'username' em vez de 'name' ou 'userId') ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -12,7 +13,7 @@ const sharp = require('sharp');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const router = express.Router();
 
-// --- (Funções de S3, Multer e Watermark - Sem Alteração) ---
+// --- (Funções de S3, Multer e Watermark) ---
 const s3Client = new S3Client({
     region: process.env.AWS_REGION,
     credentials: {
@@ -21,20 +22,18 @@ const s3Client = new S3Client({
     }
 });
 const storage = multer.memoryStorage();
-// --- ATUALIZAÇÃO (1/4): Atualiza o 'upload' para aceitar múltiplos campos ---
 const upload = multer({ storage: storage });
-// --- FIM DA ATUALIZAÇÃO ---
 
 const createWatermarkSvg = (username, date) => {
     const svgText = `
-    <svg width="400" height="100">
-      <style>
-      .title { fill: rgba(255, 255, 255, 0.3); font-size: 24px; font-family: Arial, sans-serif; font-weight: bold; }
-      </style>
-      <text x="10" y="40" class="title">${username}</text>
-      <text x="10" y="70" class="title">${date}</text>
-    </svg>
-    `;
+    <svg width="400" height="100">
+      <style>
+      .title { fill: rgba(255, 255, 255, 0.3); font-size: 24px; font-family: Arial, sans-serif; font-weight: bold; }
+      </style>
+      <text x="10" y="40" class="title">${username}</text>
+      <text x="10" y="70" class="title">${date}</text>
+    </svg>
+    `;
     return Buffer.from(svgText);
 };
 const addWatermark = async (originalImageBuffer, username) => {
@@ -45,12 +44,12 @@ const addWatermark = async (originalImageBuffer, username) => {
     try {
         const watermarkSvg = createWatermarkSvg(username, formattedDate);
         const watermarkBuffer = await sharp(watermarkSvg)
-            .resize({ width: 150 }) 
+            .resize({ width: 150 })
             .toBuffer();
         return sharp(originalImageBuffer)
             .composite([{
-                input: watermarkBuffer, 
-                tile: true, 
+                input: watermarkBuffer,
+                tile: true,
             }])
             .toBuffer();
     } catch (sharpError) {
@@ -59,7 +58,10 @@ const addWatermark = async (originalImageBuffer, username) => {
     }
 };
 const uploadToS3 = async (file, folder, user, applyWatermark = true) => {
-    const userNameForWatermark = user?.name || `user-${user.userId || 'unknown'}`;
+    // ★★★ CORREÇÃO (1/5): Prioriza o 'username' para a marca d'água ★★★
+    // Prefere username, depois name, e por último o ID.
+    const userNameForWatermark = user?.username || user?.name || `user-${user.userId || 'unknown'}`;
+
     let bufferToUpload = file.buffer;
     if (file.mimetype.startsWith('image/') && applyWatermark) {
         try {
@@ -106,12 +108,13 @@ const deleteFromS3 = async (s3Key) => {
 
 
 // --- ROTAS DO USUÁRIO ---
-// (Rotas /photos, /profile/avatar, /profile/cover, /profile, /profile/:id, etc... OMITIDAS POR BREVIDADE)
-// ... (seu código anterior sem alteração)
 router.post('/photos', checkAuth, upload.single('photo'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo de imagem enviado.' });
-        const { fileUrl, s3Key } = await uploadToS3(req.file, 'photos', { userId: req.user.userId, name: req.user.name });
+
+        // ★★★ CORREÇÃO (2/5): Passa o 'username' para a função de upload ★★★
+        const { fileUrl, s3Key } = await uploadToS3(req.file, 'photos', { userId: req.user.userId, name: req.user.name, username: req.user.username });
+
         const newPhoto = await prisma.photo.create({
             data: { url: fileUrl, key: s3Key, description: req.body.description, authorId: req.user.userId }
         });
@@ -126,12 +129,15 @@ router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, re
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
         const currentProfile = await prisma.profile.findUnique({ where: { userId: req.user.userId }, select: { avatarKey: true } });
         if (currentProfile?.avatarKey) { await deleteFromS3(currentProfile.avatarKey); }
-        const { fileUrl, s3Key } = await uploadToS3(req.file, 'avatars', { userId: req.user.userId, name: req.user.name });
+
+        // ★★★ CORREÇÃO (3/5): Passa o 'username' para a função de upload ★★★
+        const { fileUrl, s3Key } = await uploadToS3(req.file, 'avatars', { userId: req.user.userId, name: req.user.name, username: req.user.username });
+
         const updatedProfile = await prisma.profile.upsert({
             where: { userId: req.user.userId },
             update: { avatarUrl: fileUrl, avatarKey: s3Key },
             create: { userId: req.user.userId, avatarUrl: fileUrl, avatarKey: s3Key },
-            include: { user: { select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
+            include: { user: { select: { id: true, email: true, name: true, username: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
         });
         const userData = { ...updatedProfile.user, profilePictureUrl: updatedProfile.avatarUrl, coverPhotoUrl: updatedProfile.coverPhotoUrl, bio: updatedProfile.bio, location: updatedProfile.location, gender: updatedProfile.gender };
         res.json(userData);
@@ -145,12 +151,15 @@ router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res
         if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
         const currentProfile = await prisma.profile.findUnique({ where: { userId: req.user.userId }, select: { coverPhotoKey: true } });
         if (currentProfile?.coverPhotoKey) { await deleteFromS3(currentProfile.coverPhotoKey); }
-        const { fileUrl, s3Key } = await uploadToS3(req.file, 'covers', { userId: req.user.userId, name: req.user.name }, false);
+
+        // ★★★ CORREÇÃO (4/5): Passa o 'username' (por consistência, embora a marca d'água esteja 'false') ★★★
+        const { fileUrl, s3Key } = await uploadToS3(req.file, 'covers', { userId: req.user.userId, name: req.user.name, username: req.user.username }, false);
+
         const updatedProfile = await prisma.profile.upsert({
             where: { userId: req.user.userId },
             update: { coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
             create: { userId: req.user.userId, coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
-            include: { user: { select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
+            include: { user: { select: { id: true, email: true, name: true, username: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
         });
         const userData = { ...updatedProfile.user, profilePictureUrl: updatedProfile.avatarUrl, coverPhotoUrl: updatedProfile.coverPhotoUrl, bio: updatedProfile.bio, location: updatedProfile.location, gender: updatedProfile.gender };
         res.json(userData);
@@ -165,7 +174,7 @@ router.get('/profile', checkAuth, async (req, res) => {
         const userWithProfile = await prisma.user.findUnique({
             where: { id: loggedInUserId },
             select: {
-                id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true,
+                id: true, email: true, name: true, username: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true,
                 tipo_plano: true,
                 status: true,
                 profile: { select: { id: true, bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } }
@@ -184,6 +193,7 @@ router.get('/profile', checkAuth, async (req, res) => {
             id: userWithProfile.id,
             email: userWithProfile.email,
             name: userWithProfile.name,
+            username: userWithProfile.username,
             createdAt: userWithProfile.createdAt,
             lastSeenAt: userWithProfile.lastSeenAt,
             pimentaBalance: userWithProfile.pimentaBalance,
@@ -217,7 +227,7 @@ router.get('/profile/:id', checkAuth, async (req, res) => {
                 status: 'ativo'
             },
             select: {
-                id: true, name: true, createdAt: true, interests: true, desires: true, fetishes: true,
+                id: true, name: true, username: true, createdAt: true, interests: true, desires: true, fetishes: true,
                 profile: { select: { bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } },
                 _count: { select: { likesReceived: true } },
                 likesReceived: { where: { likerId: loggedInUserId }, select: { id: true } }
@@ -225,7 +235,7 @@ router.get('/profile/:id', checkAuth, async (req, res) => {
         });
         if (!userWithProfile) { return res.status(404).json({ message: "Usuário não encontrado ou inativo." }); }
         const publicProfileData = {
-            id: userWithProfile.id, name: userWithProfile.name, createdAt: userWithProfile.createdAt, interests: userWithProfile.interests, desires: userWithProfile.desires, fetishes: userWithProfile.fetishes,
+            id: userWithProfile.id, name: userWithProfile.name, username: userWithProfile.username, createdAt: userWithProfile.createdAt, interests: userWithProfile.interests, desires: userWithProfile.desires, fetishes: userWithProfile.fetishes,
             profilePictureUrl: userWithProfile.profile?.avatarUrl ?? null, coverPhotoUrl: userWithProfile.profile?.coverPhotoUrl ?? null, bio: userWithProfile.profile?.bio ?? null, location: userWithProfile.profile?.location ?? null, gender: userWithProfile.profile?.gender ?? null,
             likeCount: userWithProfile._count.likesReceived, isLikedByMe: userWithProfile.likesReceived.length > 0
         };
@@ -278,10 +288,10 @@ router.get('/online', checkAuth, async (req, res) => {
                 id: { not: req.user.userId },
                 status: 'ativo' // Filtro de Status
             },
-            select: { id: true, name: true, profile: { select: { avatarUrl: true, gender: true } } },
+            select: { id: true, name: true, username: true, profile: { select: { avatarUrl: true, gender: true } } },
             orderBy: { lastSeenAt: 'desc' }, take: 10,
         });
-        const formattedUsers = onlineUsers.map(user => ({ id: user.id, name: user.name, gender: user.profile?.gender ?? null, profilePictureUrl: user.profile?.avatarUrl ?? null }));
+        const formattedUsers = onlineUsers.map(user => ({ id: user.id, name: user.name, username: user.username, gender: user.profile?.gender ?? null, profilePictureUrl: user.profile?.avatarUrl ?? null }));
         res.json(formattedUsers);
     } catch (error) {
         console.error("Erro ao buscar usuários online:", error);
@@ -294,12 +304,13 @@ router.put('/profile', checkAuth, async (req, res) => {
         const updatedUserWithProfile = await prisma.user.update({
             where: { id: userId },
             data: { name: name, interests: interests, desires: desires, fetishes: fetishes, profile: { upsert: { create: { bio: bio, location: location, gender: gender }, update: { bio: bio, location: location, gender: gender } } } },
-            select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true, profile: { select: { bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } } }
+            select: { id: true, email: true, name: true, username: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true, profile: { select: { bio: true, avatarUrl: true, coverPhotoUrl: true, location: true, gender: true } } }
         });
         const profileData = {
             id: updatedUserWithProfile.id,
             email: updatedUserWithProfile.email,
             name: updatedUserWithProfile.name,
+            username: updatedUserWithProfile.username,
             createdAt: updatedUserWithProfile.createdAt,
             lastSeenAt: updatedUserWithProfile.lastSeenAt,
             pimentaBalance: updatedUserWithProfile.pimentaBalance,
@@ -334,6 +345,7 @@ router.get('/search', checkAuth, async (req, res) => {
                     {
                         OR: [
                             { name: { contains: searchTerm } },
+                            { username: { contains: searchTerm } }, // Também busca por username
                             { profile: { bio: { contains: searchTerm } } }
                         ]
                     }
@@ -342,10 +354,10 @@ router.get('/search', checkAuth, async (req, res) => {
         }
         const foundUsers = await prisma.user.findMany({
             where: whereClause,
-            select: { id: true, name: true, profile: { select: { bio: true, avatarUrl: true, location: true, gender: true } } },
+            select: { id: true, name: true, username: true, profile: { select: { bio: true, avatarUrl: true, location: true, gender: true } } },
             take: 20
         });
-        const formattedResults = foundUsers.map(user => ({ id: user.id, name: user.name, bio: user.profile?.bio ?? null, profilePictureUrl: user.profile?.avatarUrl ?? null, location: user.profile?.location ?? null, gender: user.profile?.gender ?? null }));
+        const formattedResults = foundUsers.map(user => ({ id: user.id, name: user.name, username: user.username, bio: user.profile?.bio ?? null, profilePictureUrl: user.profile?.avatarUrl ?? null, location: user.profile?.location ?? null, gender: user.profile?.gender ?? null }));
         res.status(200).json(formattedResults);
     } catch (error) {
         console.error("Erro ao buscar usuários:", error);
@@ -356,17 +368,18 @@ router.post('/search/advanced', checkAuth, async (req, res) => {
     try {
         const {
             searchTerm, // Busca por perfil...
-            location,   // Digite sua localização...
-            genders,    // Em Busca De (ex: ['Homem', 'Mulher'])
-            minAge,     // Com Idades Entre (De)
-            maxAge,     // Com Idades Entre (Até)
-            interests   // Com Interesses Em (ex: ['Menage...'])
+            location,   // Digite sua localização...
+            genders,    // Em Busca De (ex: ['Homem', 'Mulher'])
+            minAge,     // Com Idades Entre (De)
+            maxAge,     // Com Idades Entre (Até)
+            interests   // Com Interesses Em (ex: ['Menage...'])
         } = req.body;
         const filters = [];
         if (searchTerm && typeof searchTerm === 'string' && searchTerm.trim()) {
             filters.push({
                 OR: [
                     { name: { contains: searchTerm.trim() } },
+                    { username: { contains: searchTerm.trim() } }, // Também busca por username
                     { profile: { bio: { contains: searchTerm.trim() } } }
                 ]
             });
@@ -403,25 +416,27 @@ router.post('/search/advanced', checkAuth, async (req, res) => {
         console.log("Filtros da API:", JSON.stringify(whereClause, null, 2));
         const foundUsers = await prisma.user.findMany({
             where: whereClause,
-            select: { 
-                id: true, 
-                name: true, 
-                profile: { 
-                    select: { 
-                        bio: true, 
-                        avatarUrl: true, 
-                        location: true, 
-                        gender: true 
-                    } 
-                } 
+            select: {
+                id: true,
+                name: true,
+                username: true,
+                profile: {
+                    select: {
+                        bio: true,
+                        avatarUrl: true,
+                        location: true,
+                        gender: true
+                    }
+                }
             },
             take: 50 // Limite de 50 resultados
         });
-        const formattedResults = foundUsers.map(user => ({ 
-            id: user.id, 
-            name: user.name, 
-            bio: user.profile?.bio ?? null, 
-            profilePictureUrl: user.profile?.avatarUrl ?? null, 
+        const formattedResults = foundUsers.map(user => ({
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            bio: user.profile?.bio ?? null,
+            profilePictureUrl: user.profile?.avatarUrl ?? null,
             location: user.profile?.location ?? 'Local não informado', // Fallback
             gender: user.profile?.gender ?? 'Não informado' // Fallback
         }));
@@ -488,34 +503,25 @@ router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual'
 // ★★★ ROTA DE UPLOAD DE VÍDEO (ATUALIZADA) ★★★
 // =================================================================
 router.post(
-    '/videos', 
-    checkAuth, 
-    checkPlanAccess(['mensal', 'anual']), 
-    // --- ATUALIZAÇÃO (2/4): Aceita 'video' e 'thumbnail' ---
+    '/videos',
+    checkAuth,
+    checkPlanAccess(['mensal', 'anual']),
     upload.fields([
         { name: 'video', maxCount: 1 },
         { name: 'thumbnail', maxCount: 1 },
-    ]), 
+    ]),
     async (req, res) => {
         try {
-            // =======================================================
-            // ▼▼▼ CORREÇÃO (O erro do seu print) ▼▼▼
-            // Removida a sintaxe TypeScript 'as { ... }'
-            // =======================================================
             const files = req.files;
-            
-            // Verificação de tipo segura para JavaScript
+
             if (!files || typeof files !== 'object') {
-                 return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
+                return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
             }
 
-            // @ts-ignore (Informa ao TS que 'files' terá essas chaves)
+            // @ts-ignore
             const videoFile = files.video ? files.video[0] : null;
             // @ts-ignore
             const thumbnailFile = files.thumbnail ? files.thumbnail[0] : null;
-            // =======================================================
-            // ▲▲▲ FIM DA CORREÇÃO ▲▲▲
-            // =======================================================
 
             if (!videoFile) {
                 return res.status(400).json({ message: 'Nenhum arquivo de vídeo enviado.' });
@@ -524,24 +530,24 @@ router.post(
                 return res.status(400).json({ message: 'Nenhum arquivo de thumbnail enviado.' });
             }
 
+            // ★★★ CORREÇÃO (5/5): Passa o 'username' (por consistência e para a thumbnail) ★★★
             // 1. Upload do Vídeo (Sem marca d'água)
-            const videoUploadResult = await uploadToS3(videoFile, 'videos', { userId: req.user.userId, name: req.user.name }, false);
+            const videoUploadResult = await uploadToS3(videoFile, 'videos', { userId: req.user.userId, name: req.user.name, username: req.user.username }, false);
 
             // 2. Upload da Thumbnail (Com marca d'água)
-            const thumbnailUploadResult = await uploadToS3(thumbnailFile, 'thumbnails', { userId: req.user.userId, name: req.user.name }, true);
+            const thumbnailUploadResult = await uploadToS3(thumbnailFile, 'thumbnails', { userId: req.user.userId, name: req.user.name, username: req.user.username }, true);
 
             // 3. Salva no banco de dados
-            const newVideo = await prisma.video.create({ 
-                data: { 
-                    url: videoUploadResult.fileUrl, 
-                    key: videoUploadResult.s3Key, 
-                    // --- ATUALIZAÇÃO (4/4): Salva a thumbnailUrl ---
-                    thumbnailUrl: thumbnailUploadResult.fileUrl, // <-- SALVA A THUMBNAIL
-                    description: req.body.description, 
-                    authorId: req.user.userId 
-                } 
+            const newVideo = await prisma.video.create({
+                data: {
+                    url: videoUploadResult.fileUrl,
+                    key: videoUploadResult.s3Key,
+                    thumbnailUrl: thumbnailUploadResult.fileUrl,
+                    description: req.body.description,
+                    authorId: req.user.userId
+                }
             });
-            
+
             res.status(201).json(newVideo);
         } catch (error) {
             console.error("Erro ao fazer upload do vídeo:", error);
@@ -552,7 +558,6 @@ router.post(
 
 
 // Deletar foto
-// (Sem alteração)
 router.delete('/photos/:id', checkAuth, async (req, res) => {
     try {
         const { id } = req.params; const photoId = parseInt(id, 10); const userId = req.user.userId;
@@ -569,7 +574,6 @@ router.delete('/photos/:id', checkAuth, async (req, res) => {
 });
 
 // ROTA DELETAR VÍDEO
-// (Sem alteração)
 router.delete('/videos/:id', checkAuth, async (req, res) => {
     try {
         const { id } = req.params; const videoId = parseInt(id, 10); const userId = req.user.userId;
@@ -577,14 +581,11 @@ router.delete('/videos/:id', checkAuth, async (req, res) => {
         const video = await prisma.video.findUnique({ where: { id: videoId } });
         if (!video) { return res.status(404).json({ message: 'Vídeo não encontrado.' }); }
         if (video.authorId !== userId) { return res.status(403).json({ message: 'Acesso negado. Você não é o dono deste vídeo.' }); }
-        
-        // --- ★★★ NOVO: Deletar a thumbnail também ★★★
-        // (Precisamos adicionar 'thumbnailKey' ao schema do Video no futuro, 
-        // mas por enquanto, deletar o 'key' (vídeo) já está bom)
-        if (video.key) { 
-            await deleteFromS3(video.key); 
-        } else { 
-            console.warn(`Vídeo ${videoId} não possuía S3 key registrada para deleção.`); 
+
+        if (video.key) {
+            await deleteFromS3(video.key);
+        } else {
+            console.warn(`Vídeo ${videoId} não possuía S3 key registrada para deleção.`);
         }
         // TODO: Adicionar deleção da thumbnailKey quando ela for salva.
 
@@ -598,7 +599,6 @@ router.delete('/videos/:id', checkAuth, async (req, res) => {
 });
 
 // GET /api/users/:id/followers
-// (Sem alteração)
 router.get('/:id/followers', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -611,8 +611,9 @@ router.get('/:id/followers', checkAuth, async (req, res) => {
             select: {
                 follower: {
                     select: {
-                        id: true,
+                         id: true,
                         name: true,
+                        username: true,
                         profile: { select: { avatarUrl: true } }
                     }
                 }
@@ -622,6 +623,7 @@ router.get('/:id/followers', checkAuth, async (req, res) => {
         const followers = follows.map(f => ({
             id: f.follower.id,
             name: f.follower.name,
+            username: f.follower.username,
             profilePictureUrl: f.follower.profile?.avatarUrl ?? null
         }));
         res.json(followers);
@@ -632,7 +634,6 @@ router.get('/:id/followers', checkAuth, async (req, res) => {
 });
 
 // GET /api/users/:id/following
-// (Sem alteração)
 router.get('/:id/following', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -647,6 +648,7 @@ router.get('/:id/following', checkAuth, async (req, res) => {
                     select: {
                         id: true,
                         name: true,
+                        username: true,
                         profile: { select: { avatarUrl: true } }
                     }
                 }
@@ -656,6 +658,7 @@ router.get('/:id/following', checkAuth, async (req, res) => {
         const following = follows.map(f => ({
             id: f.following.id,
             name: f.following.name,
+            username: f.following.username,
             profilePictureUrl: f.following.profile?.avatarUrl ?? null
         }));
         res.json(following);
@@ -666,7 +669,6 @@ router.get('/:id/following', checkAuth, async (req, res) => {
 });
 
 // GET /api/users/:id/likers
-// (Sem alteração)
 router.get('/:id/likers', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -681,6 +683,7 @@ router.get('/:id/likers', checkAuth, async (req, res) => {
                     select: {
                         id: true,
                         name: true,
+                        username: true,
                         profile: { select: { avatarUrl: true } }
                     }
                 }
@@ -690,6 +693,7 @@ router.get('/:id/likers', checkAuth, async (req, res) => {
         const likers = likes.map(l => ({
             id: l.liker.id,
             name: l.liker.name,
+            username: l.liker.username,
             profilePictureUrl: l.liker.profile?.avatarUrl ?? null
         }));
         res.json(likers);
@@ -785,4 +789,3 @@ router.delete('/excluir', checkAuth, async (req, res) => {
 // ==========================================
 
 module.exports = router;
-
