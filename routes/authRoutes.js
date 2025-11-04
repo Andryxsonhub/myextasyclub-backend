@@ -1,6 +1,5 @@
 // routes/authRoutes.js
-// --- CORRIGIDO (Payload do JWT agora inclui todos os dados do usuário) ---
-// --- CORRIGIDO (Removido lixo de formatação JSON.stringify que quebrava o /register) ---
+// --- ATUALIZADO (Adicionado Bloco de DEBUG para o token) ---
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -15,7 +14,7 @@ router.get('/health', (req, res) => {
 });
 
 // ==========================================================
-// ROTA DE LOGIN (Existente - Payload Corrigido)
+// ROTA DE LOGIN (COM DEBUG)
 // ==========================================================
 router.post('/login', async (req, res) => {
   try {
@@ -37,7 +36,17 @@ router.post('/login', async (req, res) => {
     }
 
     console.log('[LOGIN] Gerando token para:', user.id); // Log
-    // --- ★★★ Payload CORRETO ★★★ ---
+
+    // --- ★★★ INÍCIO DO DEBUG ★★★ ---
+    // Este bloco vai nos dizer o que o banco está retornando
+    console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+    console.log('!!! DEBUG DO TOKEN (O QUE VEIO DO BANCO):');
+    console.log('!!! Usuário ID:', user.id);
+    console.log('!!! Plano lido do banco:', user.tipo_plano);
+    console.log('!!! Data de Expiração lida do banco:', user.data_expiracao_plano);
+    console.log('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+    // --- ★★★ FIM DO DEBUG ★★★ ---
+
     const payload = { 
         userId: user.id, 
         email: user.email,
@@ -69,7 +78,7 @@ router.post('/login', async (req, res) => {
 });
 
 // ==========================================================
-// ROTA DE REGISTRO (Payload Corrigido e Lixo Removido)
+// ROTA DE REGISTRO (Código Padrão)
 // ==========================================================
 router.post('/register', async (req, res) => {
   try {
@@ -111,7 +120,6 @@ router.post('/register', async (req, res) => {
     console.log('[REGISTER] Perfil criado para usuário:', newUser.id); // Log
 
     console.log('[REGISTER] Gerando token para:', newUser.id); // Log
-    // --- ★★★ Payload CORRETO ★★★ ---
     const payload = { 
         userId: newUser.id, 
         email: newUser.email,
@@ -121,8 +129,6 @@ router.post('/register', async (req, res) => {
         data_expiracao_plano: newUser.data_expiracao_plano
     };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-    // --- ★★★ LIXO REMOVIDO DAQUI ★★★ ---
 
     console.log('[REGISTER] Registro bem-sucedido para:', email); // Log
     return res.status(201).json({ token, message: "Usuário registrado com sucesso!" }); 

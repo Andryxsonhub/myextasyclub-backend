@@ -30,17 +30,17 @@ const plansData = [
 const packagesData = [
   {
     name: 'Apoio Quente', // Usaremos 'name' como identificador único
-    pimentaAmount: 100,
+    pimentaAmount: 1000,
     priceInCents: 990,
   },
   {
     name: 'Pacote Essencial',
-    pimentaAmount: 500,
+    pimentaAmount: 7500,
     priceInCents: 3990,
   },
   {
     name: 'Pacote Premium',
-    pimentaAmount: 1200,
+    pimentaAmount: 15000,
     priceInCents: 8990,
   },
 ];
