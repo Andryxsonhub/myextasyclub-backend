@@ -1,5 +1,6 @@
 // routes/authRoutes.js
 // --- CORRIGIDO (Payload do JWT agora inclui todos os dados do usuário) ---
+// --- CORRIGIDO (Removido lixo de formatação JSON.stringify que quebrava o /register) ---
 
 const express = require('express');
 const jwt = require('jsonwebtoken');
@@ -36,8 +37,7 @@ router.post('/login', async (req, res) => {
     }
 
     console.log('[LOGIN] Gerando token para:', user.id); // Log
-    // --- ★★★ INÍCIO DA CORREÇÃO ★★★ ---
-    // Adicionamos todos os campos necessários para o resto da aplicação
+    // --- ★★★ Payload CORRETO ★★★ ---
     const payload = { 
         userId: user.id, 
         email: user.email,
@@ -46,7 +46,6 @@ router.post('/login', async (req, res) => {
         tipo_plano: user.tipo_plano,
         data_expiracao_plano: user.data_expiracao_plano
     };
-    // --- ★★★ FIM DA CORREÇÃO ★★★ ---
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
     // Busca com relações (sem alteração)
@@ -70,7 +69,7 @@ router.post('/login', async (req, res) => {
 });
 
 // ==========================================================
-// ROTA DE REGISTRO (Payload Corrigido)
+// ROTA DE REGISTRO (Payload Corrigido e Lixo Removido)
 // ==========================================================
 router.post('/register', async (req, res) => {
   try {
@@ -99,8 +98,6 @@ router.post('/register', async (req, res) => {
         email: email,
         password: hashedPassword,
         name: name,
-        // username será null por padrão, o que é ok
-        // tipo_plano será 'gratuito' por padrão (pelo schema)
       },
     });
     console.log('[REGISTER] Usuário criado com ID:', newUser.id); // Log
@@ -114,23 +111,19 @@ router.post('/register', async (req, res) => {
     console.log('[REGISTER] Perfil criado para usuário:', newUser.id); // Log
 
     console.log('[REGISTER] Gerando token para:', newUser.id); // Log
-  	// --- ★★★ INÍCIO DA CORREÇÃO ★★★ ---
-    // Adicionamos todos os campos (mesmo os nulos) para consistência
+    // --- ★★★ Payload CORRETO ★★★ ---
     const payload = { 
         userId: newUser.id, 
         email: newUser.email,
         name: newUser.name,
-        username: newUser.username, // (será null)
-        tipo_plano: newUser.tipo_plano, // (será 'gratuito')
-        data_expiracao_plano: newUser.data_expiracao_plano // (será null)
+        username: newUser.username,
+        tipo_plano: newUser.tipo_plano,
+        data_expiracao_plano: newUser.data_expiracao_plano
     };
-  	// --- ★★★ FIM DA CORREÇÃO ★★★ ---
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-JSON.stringify({
-   "token": "...",
-   "message": "Usuário registrado com sucesso!"
-})
+    // --- ★★★ LIXO REMOVIDO DAQUI ★★★ ---
+
     console.log('[REGISTER] Registro bem-sucedido para:', email); // Log
     return res.status(201).json({ token, message: "Usuário registrado com sucesso!" }); 
 
