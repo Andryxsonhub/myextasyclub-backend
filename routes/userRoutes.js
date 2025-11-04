@@ -1,6 +1,7 @@
 // routes/userRoutes.js
-// --- CORRIGIDO (Marca d'água agora usa 'username' em vez de 'name' ou 'userId') ---
-// --- CORRIGIDO (Adicionado 'escapeSVG' para prevenir crash com caracteres especiais) ---
+// --- CORRIGIDO (Marca d'água agora usa 'username') ---
+// --- CORRIGIDO (escapeSVG para caracteres especiais) ---
+// --- CORRIGIDO (Removido whitespace inicial do template SVG que causava o crash) ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -23,7 +24,6 @@ const s3Client = new S3Client({
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// ★★★ INÍCIO DA CORREÇÃO ★★★
 // Função para "limpar" o texto para SVG e evitar crashes
 const escapeSVG = (text) => {
     if (!text) return '';
@@ -38,22 +38,20 @@ const escapeSVG = (text) => {
         }
     });
 };
-// ★★★ FIM DA CORREÇÃO ★★★
 
 const createWatermarkSvg = (username, date) => {
-    // ★★★ APLICA A CORREÇÃO ★★★
     const safeUsername = escapeSVG(username);
     const safeDate = escapeSVG(date);
 
-    const svgText = `
-    <svg width="400" height="100">
+    // O texto do SVG NÃO PODE ter newlines ou espaços antes do <svg> ou depois do </svg>
+    const svgText = `<svg width="400" height="100">
       <style>
       .title { fill: rgba(255, 255, 255, 0.3); font-size: 24px; font-family: Arial, sans-serif; font-weight: bold; }
       </style>
       <text x="10" y="40" class="title">${safeUsername}</text>
       <text x="10" y="70" class="title">${safeDate}</text>
-    </svg>
-    `;
+    </svg>`;
+
     return Buffer.from(svgText);
 };
 
@@ -157,8 +155,7 @@ router.put('/profile/avatar', checkAuth, upload.single('avatar'), async (req, re
             where: { userId: req.user.userId },
             update: { avatarUrl: fileUrl, avatarKey: s3Key },
             create: { userId: req.user.userId, avatarUrl: fileUrl, avatarKey: s3Key },
-            // (O 'select' foi copiado do código que você mandou)
-            include: { user: { select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
+            include: { user: { select: { id: true, email: true, name: true, username: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
         });
         const userData = { ...updatedProfile.user, profilePictureUrl: updatedProfile.avatarUrl, coverPhotoUrl: updatedProfile.coverPhotoUrl, bio: updatedProfile.bio, location: updatedProfile.location, gender: updatedProfile.gender };
         res.json(userData);
@@ -180,8 +177,7 @@ router.post('/profile/cover', checkAuth, upload.single('cover'), async (req, res
             where: { userId: req.user.userId },
             update: { coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
             create: { userId: req.user.userId, coverPhotoUrl: fileUrl, coverPhotoKey: s3Key },
-            // (O 'select' foi copiado do código que você mandou)
-            include: { user: { select: { id: true, email: true, name: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
+            include: { user: { select: { id: true, email: true, name: true, username: true, createdAt: true, lastSeenAt: true, pimentaBalance: true, interests: true, desires: true, fetishes: true, tipo_plano: true, status: true } } }
         });
         const userData = { ...updatedProfile.user, profilePictureUrl: updatedProfile.avatarUrl, coverPhotoUrl: updatedProfile.coverPhotoUrl, bio: updatedProfile.bio, location: updatedProfile.location, gender: updatedProfile.gender };
         res.json(userData);
@@ -466,7 +462,6 @@ router.post('/search/advanced', checkAuth, async (req, res) => {
     } catch (error) {
         console.error("Erro na busca avançada:", error);
         res.status(500).json({ message: "Erro interno ao realizar a busca avançada." });
-        A
     }
 });
 router.get('/photos', checkAuth, async (req, res) => {
@@ -505,7 +500,7 @@ router.get('/user/:userId/photos', checkAuth, async (req, res) => {
     }
 });
 router.get('/user/:userId/videos', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
-    section: try {
+    try {
         const userId = parseInt(req.params.userId, 10);
         if (isNaN(userId)) return res.status(400).json({ message: "ID de usuário inválido." });
         const videos = await prisma.video.findMany({
@@ -529,7 +524,6 @@ router.post(
     '/videos',
     checkAuth,
     checkPlanAccess(['mensal', 'anual']),
-    // --- ATUALIZAÇÃO (2/4): Aceita 'video' e 'thumbnail' ---
     upload.fields([
         { name: 'video', maxCount: 1 },
         { name: 'thumbnail', maxCount: 1 },
@@ -542,7 +536,7 @@ router.post(
                 return res.status(400).json({ message: 'Nenhum arquivo enviado.' });
             }
 
-            // @ts-ignore (Informa ao TS que 'files' terá essas chaves)
+            // @ts-ignore
             const videoFile = files.video ? files.video[0] : null;
             // @ts-ignore
             const thumbnailFile = files.thumbnail ? files.thumbnail[0] : null;
@@ -566,24 +560,22 @@ router.post(
                 data: {
                     url: videoUploadResult.fileUrl,
                     key: videoUploadResult.s3Key,
-                    // --- ATUALIZAÇÃO (4/4): Salva a thumbnailUrl ---
-                    thumbnailUrl: thumbnailUploadResult.fileUrl, // <-- SALVA A THUMBNAIL
+                    thumbnailUrl: thumbnailUploadResult.fileUrl,
                     description: req.body.description,
                     authorId: req.user.userId
                 }
             });
 
             res.status(201).json(newVideo);
-                 } catch (error) {
-                console.error("Erro ao fazer upload do vídeo:", error);
-                res.status(500).json({ message: "Erro interno do servidor ao tentar fazer upload do vídeo." });
-            }
+        } catch (error) {
+            console.error("Erro ao fazer upload do vídeo:", error);
+            res.status(500).json({ message: "Erro interno do servidor ao tentar fazer upload do vídeo." });
+        }
     }
 );
 
 
 // Deletar foto
-// (Sem alteração)
 router.delete('/photos/:id', checkAuth, async (req, res) => {
     try {
         const { id } = req.params; const photoId = parseInt(id, 10); const userId = req.user.userId;
@@ -600,7 +592,6 @@ router.delete('/photos/:id', checkAuth, async (req, res) => {
 });
 
 // ROTA DELETAR VÍDEO
-// (Sem alteração)
 router.delete('/videos/:id', checkAuth, async (req, res) => {
     try {
         const { id } = req.params; const videoId = parseInt(id, 10); const userId = req.user.userId;
@@ -609,9 +600,6 @@ router.delete('/videos/:id', checkAuth, async (req, res) => {
         if (!video) { return res.status(404).json({ message: 'Vídeo não encontrado.' }); }
         if (video.authorId !== userId) { return res.status(403).json({ message: 'Acesso negado. Você não é o dono deste vídeo.' }); }
 
-        // --- ★★★ NOVO: Deletar a thumbnail também ★★★
-        // (Precisamos adicionar 'thumbnailKey' ao schema do Video no futuro, 
-        // mas por enquanto, deletar o 'key' (vídeo) já está bom)
         if (video.key) {
             await deleteFromS3(video.key);
         } else {
@@ -624,12 +612,11 @@ router.delete('/videos/:id', checkAuth, async (req, res) => {
     } catch (error) {
         console.error("Erro ao apagar o vídeo:", error);
         if (error.code === 'P2025') { return res.status(4404).json({ message: 'Vídeo não encontrado.' }); }
-        source_code: res.status(500).json({ message: "Erro interno do servidor ao apagar vídeo." });
+        res.status(500).json({ message: "Erro interno do servidor ao apagar vídeo." });
     }
 });
 
 // GET /api/users/:id/followers
-// (Sem alteração)
 router.get('/:id/followers', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -642,7 +629,7 @@ router.get('/:id/followers', checkAuth, async (req, res) => {
             select: {
                 follower: {
                     select: {
-                        id: true,
+                         id: true,
                         name: true,
                         username: true,
                         profile: { select: { avatarUrl: true } }
@@ -659,13 +646,12 @@ router.get('/:id/followers', checkAuth, async (req, res) => {
         }));
         res.json(followers);
     } catch (error) {
-        source_code: console.error(`Erro ao buscar seguidores para usuário ${req.params.id}:`, error);
+        console.error(`Erro ao buscar seguidores para usuário ${req.params.id}:`, error);
         res.status(500).json({ message: "Erro ao buscar seguidores." });
     }
 });
 
 // GET /api/users/:id/following
-// (Sem alteração)
 router.get('/:id/following', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -701,7 +687,6 @@ router.get('/:id/following', checkAuth, async (req, res) => {
 });
 
 // GET /api/users/:id/likers
-// (Sem alteração)
 router.get('/:id/likers', checkAuth, async (req, res) => {
     try {
         const userId = parseInt(req.params.id, 10);
@@ -795,8 +780,7 @@ router.delete('/excluir', checkAuth, async (req, res) => {
                 data: {
                     status: 'deletado',
                     name: 'Usuário Excluído',
-                    email: `deleted_${userId}@myextasy.club`, // Mantém o email único
-                    username: `deleted_${userId}`, // Mantém o username único
+                    email: `deleted_${userId}@myextasy.club`, // Mantém o email únicos                   username: `deleted_${userId}`, // Mantém o username único
                     password: 'DELETED', // Seta uma senha inválida
                     interests: null,
                     desires: null,
