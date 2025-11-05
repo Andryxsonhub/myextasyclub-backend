@@ -1,10 +1,9 @@
 // myextasyclub-backend/routes/liveRoutes.js
-// --- CÓDIGO 100% CORRIGIDO ---
+// --- CORRIGIDO (Usuários 'gratuito' agora podem *entrar* na live) ---
 
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-// --- CORREÇÃO APLICADA AQUI ---
 const { checkAuth, checkPlanAccess } = require('../middleware/authMiddleware');
 const { AccessToken } = require('livekit-server-sdk');
 
@@ -13,8 +12,8 @@ module.exports = function (io) {
 
     // ============================================================
     // 🟢 1. INICIAR UMA LIVE (AÇÃO PAGA)
+    // (Sem alteração - 'checkPlanAccess' mantido corretamente)
     // ============================================================
-    // --- CORREÇÃO APLICADA AQUI (checkAuth e checkPlanAccess) ---
     router.post('/start', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
         const userId = req.user.userId;
         const roomName = `live-${userId}`;
@@ -66,13 +65,15 @@ module.exports = function (io) {
     });
 
     // ============================================================
-    // 🟡 2. GERAR TOKEN DO LIVEKIT (AÇÃO PAGA PARA ASSISTIR)
+    // 🟡 2. GERAR TOKEN DO LIVEKIT (AGORA É GRATUITO PARA ASSISTIR)
     // ============================================================
-    // --- CORREÇÃO APLICADA AQUI (checkAuth e checkPlanAccess) ---
-    router.get('/token/:roomName', checkAuth, checkPlanAccess(['mensal', 'anual']), async (req, res) => {
+    // --- ★★★ CORREÇÃO AQUI ★★★ ---
+    // Removido o middleware 'checkPlanAccess'.
+    // Agora, qualquer usuário logado ('checkAuth') pode pegar um token para ASSISTIR.
+    router.get('/token/:roomName', checkAuth, async (req, res) => {
         const { roomName } = req.params;
         const userId = req.user.userId;
-        const userName = req.user.name || `User_${userId}`; // req.user.name pode não existir, ajuste se necessário
+        const userName = req.user.name || `User_${userId}`;
 
         try {
             const liveStream = await prisma.liveStream.findUnique({
@@ -84,8 +85,10 @@ module.exports = function (io) {
                 return res.status(404).json({ message: 'Live não encontrada ou não está ativa.' });
             }
 
+            // Permissões do LiveKit
+            // 'canPublish' é true SOMENTE se o user ID for o mesmo do host da live
             const canPublish = liveStream.hostId === userId;
-            const canSubscribe = true;
+            const canSubscribe = true; // Todos podem se inscrever (assistir)
 
             console.log('--- DEBUG LIVEKIT ---');
             console.log('API Key:', process.env.LIVEKIT_API_KEY);
@@ -107,7 +110,7 @@ module.exports = function (io) {
                 roomJoin: true,
                 canPublish,
                 canSubscribe,
-                canPublishData: true,
+                canPublishData: true, // Necessário para o chat
             });
 
             const token = await at.toJwt();
@@ -124,8 +127,8 @@ module.exports = function (io) {
 
     // ============================================================
     // 🔴 3. PARAR UMA LIVE
+    // (Sem alteração)
     // ============================================================
-    // --- CORREÇÃO APLICADA AQUI (checkAuth) ---
     router.post('/stop', checkAuth, async (req, res) => {
         const userId = req.user.userId;
         const roomName = `live-${userId}`;
@@ -151,9 +154,9 @@ module.exports = function (io) {
     });
 
     // ============================================================
-    // 🔵 4. LISTAR LIVES ATIVAS (PODE SER GRATUITO PARA VER A LISTA)
+    // 🔵 4. LISTAR LIVES ATIVAS (GRATUITO PODE VER)
+    // (Sem alteração)
     // ============================================================
-    // --- CORREÇÃO APLICADA AQUI (checkAuth) ---
     router.get('/active', checkAuth, async (req, res) => {
         try {
             const activeStreams = await prisma.liveStream.findMany({
