@@ -133,10 +133,10 @@ router.get('/subscription-plans', checkAuth, async (_req, res) => {
         durationInDays = 7;
       } else if (planNameLower.includes('mensal')) {
         features = [
-          "Todos os benefícios do Bronze",
+          "Todos os benefícios do Semanal",
           "Mensagens ilimitadas",
-          "Selo de membro Vip",
-          "Ver quem visitou seu perfil",
+          "Oportunidade de migração de plano com desconto",
+          "Chance de participar de sorteios futuros",
           "Participar de lives exclusivas"
         ];
         durationInDays = 30;
@@ -152,9 +152,9 @@ router.get('/subscription-plans', checkAuth, async (_req, res) => {
 
       } else if (planNameLower.includes('anual')) {
         features = [
-          "Todos os benefícios do Prata",
-          "Destaque nas buscas",
-          "Selo de membro Premium",
+          "Todos os benefícios do Mensal",
+          "Garantia de participação em sorteios futuros",
+          "Chance de ganhar pimentas adicionais",
           "Acesso antecipado a eventos",
           "Suporte prioritário 24/7"
         ];
