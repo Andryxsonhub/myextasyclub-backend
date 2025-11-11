@@ -1,5 +1,5 @@
 // myextasyclub-backend/prisma/schema.prisma
-// --- ATUALIZADO (Adiciona 'thumbnailUrl' ao modelo 'Video') ---
+// --- ★★★ ATUALIZADO (Adiciona 'destacadoAte' ao modelo 'User') ★★★ ---
 
 generator client {
   provider = "prisma-client-js"
@@ -11,39 +11,43 @@ datasource db {
 }
 
 model User {
-  id                   Int                 @id @default(autoincrement())
-  email                String              @unique
-  username             String?             @unique
+  id                   Int       @id @default(autoincrement())
+  email                String    @unique
+  username             String?   @unique
   name                 String?
   password             String
-  createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
   profile              Profile?
   photos               Photo[]
   videos               Video[] // Relação com Vídeo
   posts                Post[]
-  streams              LiveStream[]        @relation("Host")
+  streams              LiveStream[]    @relation("Host")
   transactions         Transaction[]
   subscription         Subscription?
-  viewedProfiles       ProfileView[]       @relation("Viewer")
-  likesGiven           Like[]              @relation("LikesGiven")
-  likesReceived        Like[]              @relation("LikesReceivedOnProfile")
-  following            Follow[]            @relation("Following")
-  followers            Follow[]            @relation("Followers")
+  viewedProfiles       ProfileView[]   @relation("Viewer")
+  likesGiven           Like[]          @relation("LikesGiven")
+  likesReceived        Like[]          @relation("LikesReceivedOnProfile")
+  following            Follow[]        @relation("Following")
+  followers            Follow[]        @relation("Followers")
   interests            String?
   desires              String?
   fetishes             String?
-  lastSeenAt           DateTime?           @map("last_seen_at")
-  pimentaBalance       Int?                @default(0) @map("pimenta_balance")
-  tipo_plano           String?             @default("gratuito") @map("tipo_plano")
-  data_expiracao_plano DateTime?           @map("data_expiracao_plano")
-  status               String?             @default("ativo") @map("status")
-  reportsReceived      Report[]            @relation("Reported")
-  reportsMade          Report[]            @relation("Reporter")
-  blockedBy            BlockedUser[]       @relation("Blocked")
-  blockedUsers         BlockedUser[]       @relation("Blocker")
-  sentMessages         Message[]           @relation("SentMessages")
-  receivedMessages     Message[]           @relation("ReceivedMessages")
+  lastSeenAt           DateTime?       @map("last_seen_at")
+  pimentaBalance       Int?            @default(0) @map("pimenta_balance")
+  tipo_plano           String?         @default("gratuito") @map("tipo_plano")
+  data_expiracao_plano DateTime?       @map("data_expiracao_plano")
+  status               String?         @default("ativo") @map("status")
+
+  // ★★★ ESTA É A LINHA QUE FALTAVA (CORREÇÃO DO ERRO 500) ★★★
+  destacadoAte         DateTime?       @map("destacado_ate") // <-- Adiciona a coluna para o Destaque
+
+  reportsReceived      Report[]        @relation("Reported")
+  reportsMade          Report[]        @relation("Reporter")
+  blockedBy            BlockedUser[]   @relation("Blocked")
+  blockedUsers         BlockedUser[]   @relation("Blocker")
+  sentMessages         Message[]       @relation("SentMessages")
+  receivedMessages     Message[]       @relation("ReceivedMessages")
   extrato              ExtratoPimentas[]
   comments             Comment[] // Relação com Comentários
 
@@ -51,17 +55,17 @@ model User {
 }
 
 model Profile {
-  id            Int           @id @default(autoincrement())
-  bio           String?       @db.Text
-  coverPhotoUrl String?       @map("cover_photo_url")
-  avatarUrl     String?       @map("avatar_url")
-  location      String?
-  gender        String?
-  avatarKey     String?       @map("avatar_key")
-  coverPhotoKey String?       @map("cover_photo_key")
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId        Int           @unique
-  views         ProfileView[] @relation("ViewedProfile")
+  id              Int           @id @default(autoincrement())
+  bio             String?       @db.Text
+  coverPhotoUrl   String?       @map("cover_photo_url")
+  avatarUrl       String?       @map("avatar_url")
+  location        String?
+  gender          String?
+  avatarKey       String?       @map("avatar_key")
+  coverPhotoKey   String?       @map("cover_photo_key")
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int           @unique
+  views           ProfileView[] @relation("ViewedProfile")
 
   @@map("profiles")
 }
@@ -90,10 +94,7 @@ model Video {
   authorId     Int       @map("author_id")
   likes        Like[]    @relation("LikesOnVideo")
   comments     Comment[] // Relação com Comentários
-
-  // --- ★★★ ATUALIZAÇÃO AQUI (1/1) ★★★ ---
-  thumbnailUrl String?   @map("thumbnail_url") // <-- O CAMPO QUE FALTAVA
-  // --- ★★★ FIM DA ATUALIZAÇÃO ★★★ ---
+  thumbnailUrl String?   @map("thumbnail_url")
 
   @@map("videos")
 }
