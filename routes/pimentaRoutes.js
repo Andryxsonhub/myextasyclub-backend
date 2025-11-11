@@ -1,5 +1,5 @@
 // routes/pimentaRoutes.js
-// --- ★★★ ATUALIZADO (Adicionada Rota POST /comprar-destaque) ★★★ ---
+// --- ★★★ ATUALIZADO (Destaque agora dura 20 MINUTOS) ★★★ ---
 
 const express = require('express');
 const prisma = require('../lib/prisma');
@@ -125,16 +125,22 @@ module.exports = function (io) {
     });
 
     // ===============================================================
-    // ★★★ ROTA 3: COMPRAR DESTAQUE (NOVA) ★★★
+    // ★★★ ROTA 3: COMPRAR DESTAQUE (20 MINUTOS) ★★★
     // ===============================================================
     router.post('/comprar-destaque', checkAuth, async (req, res) => {
         const userId = req.user.userId;
         const destaqueCost = 300; // Custo de 300 pimentas
-        const destaqueDurationHoras = 24; // Duração de 24 horas
+        
+        // ★★★ CORREÇÃO AQUI ★★★
+        const destaqueDurationMinutos = 20; // Duração de 20 minutos
+        // ★★★ FIM DA CORREÇÃO ★★★
 
         try {
             const agora = new Date();
-            const dataExpiracao = new Date(agora.getTime() + destaqueDurationHoras * 60 * 60 * 1000);
+            
+            // ★★★ CORREÇÃO AQUI ★★★
+            const dataExpiracao = new Date(agora.getTime() + destaqueDurationMinutos * 60 * 1000); // 20 minutos * 60s * 1000ms
+            // ★★★ FIM DA CORREÇÃO ★★★
 
             // Transação segura: debita E define a data de expiração
             const [updatedUser] = await prisma.$transaction(async (tx) => {
