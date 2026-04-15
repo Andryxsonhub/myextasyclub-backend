@@ -1,5 +1,5 @@
 // myextasyclub-backend/routes/mediaRoutes.js
-// --- ATUALIZADO (Corrige o crash 500 na rota /feed) ---
+// --- ATUALIZADO (Links corrigidos para o padrão do Frontend /photo/:id) ---
 
 /**
  * @typedef {import('express').Request} Request
@@ -13,7 +13,6 @@ const { checkAuth } = require('../middleware/authMiddleware');
 
 // =================================================================
 // ROTA FEED (H01/H02): Feed da Home Page (Mídia Mista)
-// (CORRIGIDO)
 // =================================================================
 router.get('/feed', async (req, res) => {
     const loggedInUserId = req.user?.userId;
@@ -22,7 +21,7 @@ router.get('/feed', async (req, res) => {
             take: 20, orderBy: { createdAt: 'desc' },
             include: {
                 author: { select: { id: true, name: true, username: true, profile: { select: { avatarUrl: true } } } },
-                _count: { select: { likes: true, comments: true } }, // Comentários OK para fotos
+                _count: { select: { likes: true, comments: true } }, 
                 likes: { where: { likerId: loggedInUserId || -1 }, select: { id: true } },
             },
         });
@@ -30,10 +29,7 @@ router.get('/feed', async (req, res) => {
             take: 20, orderBy: { createdAt: 'desc' },
             include: {
                 author: { select: { id: true, name: true, username: true, profile: { select: { avatarUrl: true } } } },
-                // --- ★★★ CORREÇÃO AQUI ★★★ ---
-                // Removido 'comments: true' de '_count', pois vídeos não têm comentários ainda.
                 _count: { select: { likes: true } },
-                // --- ★★★ FIM DA CORREÇÃO ★★★ ---
                 likes: { where: { likerId: loggedInUserId || -1 }, select: { id: true } },
             },
         });
@@ -53,9 +49,7 @@ router.get('/feed', async (req, res) => {
             content: video.description, createdAt: video.createdAt.toISOString(),
             author: { id: video.author.id, name: video.author.name || 'Usuário', profilePictureUrl: video.author.profile?.avatarUrl },
             likeCount: parseInt(String(video._count?.likes ?? 0), 10),
-            // --- ★★★ CORREÇÃO AQUI ★★★ ---
-            commentCount: 0, // Definido como 0 para vídeos
-            // --- ★★★ FIM DA CORREÇÃO ★★★ ---
+            commentCount: 0, 
             isLikedByMe: video.likes.length > 0,
         }));
 
@@ -71,7 +65,6 @@ router.get('/feed', async (req, res) => {
 
 // =================================================================
 // ROTA BUSCAR FOTO INDIVIDUAL POR ID
-// (Correto, com commentCount)
 // =================================================================
 router.get('/photos/:id', async (req, res) => {
     const photoId = parseInt(req.params.id, 10);
@@ -115,7 +108,6 @@ router.get('/photos/:id', async (req, res) => {
 
 // =================================================================
 // ROTA BUSCAR VÍDEO INDIVIDUAL POR ID
-// (Corrigido, sem commentCount)
 // =================================================================
 router.get('/videos/:id', async (req, res) => {
     const videoId = parseInt(req.params.id, 10);
@@ -130,9 +122,7 @@ router.get('/videos/:id', async (req, res) => {
             where: { id: videoId },
             include: {
                 author: { select: { id: true, name: true, username: true, profile: { select: { avatarUrl: true } } } },
-                // --- ★★★ CORREÇÃO AQUI ★★★ ---
                 _count: { select: { likes: true } },
-                // --- ★★★ FIM DA CORREÇÃO ★★★ ---
                 likes: { where: { likerId: loggedInUserId || -1 }, select: { id: true } },
             },
         });
@@ -147,9 +137,7 @@ router.get('/videos/:id', async (req, res) => {
             content: video.description, createdAt: video.createdAt.toISOString(),
             author: { id: video.author.id, name: video.author.name || 'Usuário', profilePictureUrl: video.author.profile?.avatarUrl },
             likeCount: parseInt(String(video._count?.likes ?? 0), 10),
-            // --- ★★★ CORREÇÃO AQUI ★★★ ---
             commentCount: 0,
-            // --- ★★★ FIM DA CORREÇÃO ★★★ ---
             isLikedByMe: video.likes.length > 0,
         };
 
@@ -161,20 +149,40 @@ router.get('/videos/:id', async (req, res) => {
 });
 
 
-// --- Rotas de Like (requerem authMiddleware) ---
-// (Sem alteração)
+// =================================================================
+// ★★★ ROTAS DE LIKES (COM NOTIFICAÇÕES) ★★★
+// =================================================================
+
 router.post('/photos/:id/like', checkAuth, async (req, res) => {
     const likerId = req.user.userId;
     const photoId = parseInt(req.params.id, 10);
     if (isNaN(photoId) || !likerId) return res.status(400).json({ error: 'Requisição inválida.' });
+    
     try {
+        const photo = await prisma.photo.findUnique({ where: { id: photoId } });
+        if (!photo) return res.status(404).json({ error: 'Foto não encontrada.' });
+
         const existingLike = await prisma.like.findUnique({ where: { likerId_likedPhotoId: { likerId, likedPhotoId: photoId } } });
+        
         if (existingLike) {
             await prisma.like.delete({ where: { id: existingLike.id } });
             const count = await prisma.like.count({ where: { likedPhotoId: photoId } });
             res.status(200).json({ isLikedByMe: false, likeCount: count });
         } else {
             await prisma.like.create({ data: { likerId, likedPhotoId: photoId } });
+            
+            // ★ CORREÇÃO DO LINK DA FOTO ★
+            if (photo.authorId !== likerId) {
+                await prisma.notification.create({
+                    data: {
+                        userId: photo.authorId,
+                        type: 'LIKE',
+                        content: `${req.user.username || 'Alguém'} curtiu sua foto!`,
+                        link: `/photo/${photoId}` // <-- LINK CORRIGIDO AQUI
+                    }
+                });
+            }
+
             const count = await prisma.like.count({ where: { likedPhotoId: photoId } });
             res.status(201).json({ isLikedByMe: true, likeCount: count });
         }
@@ -187,19 +195,36 @@ router.post('/photos/:id/like', checkAuth, async (req, res) => {
     }
 });
 
-// (Sem alteração)
 router.post('/videos/:id/like', checkAuth, async (req, res) => {
     const likerId = req.user.userId;
     const videoId = parseInt(req.params.id, 10);
     if (isNaN(videoId) || !likerId) return res.status(400).json({ error: 'Requisição inválida.' });
+    
     try {
+        const video = await prisma.video.findUnique({ where: { id: videoId } });
+        if (!video) return res.status(404).json({ error: 'Vídeo não encontrado.' });
+
         const existingLike = await prisma.like.findUnique({ where: { likerId_likedVideoId: { likerId, likedVideoId: videoId } } });
+        
         if (existingLike) {
             await prisma.like.delete({ where: { id: existingLike.id } });
             const count = await prisma.like.count({ where: { likedVideoId: videoId } });
             res.status(200).json({ isLikedByMe: false, likeCount: count });
         } else {
             await prisma.like.create({ data: { likerId, likedVideoId: videoId } });
+
+            // ★ CORREÇÃO DO LINK DO VÍDEO ★
+            if (video.authorId !== likerId) {
+                await prisma.notification.create({
+                    data: {
+                        userId: video.authorId,
+                        type: 'LIKE',
+                        content: `${req.user.username || 'Alguém'} curtiu seu vídeo!`,
+                        link: `/video/${videoId}` // <-- LINK CORRIGIDO AQUI
+                    }
+                });
+            }
+
             const count = await prisma.like.count({ where: { likedVideoId: videoId } });
             res.status(201).json({ isLikedByMe: true, likeCount: count });
         }
@@ -212,8 +237,9 @@ router.post('/videos/:id/like', checkAuth, async (req, res) => {
     }
 });
 
-// ROTA LISTAR LIKERS DE FOTO
-// (Sem alteração)
+// =================================================================
+// ROTAS DE LIKERS
+// =================================================================
 router.get('/photos/:id/likers', checkAuth, async (req, res) => {
     const photoId = parseInt(req.params.id, 10);
     if (isNaN(photoId)) { return res.status(400).json({ error: 'ID da foto inválido.' }); }
@@ -233,8 +259,6 @@ router.get('/photos/:id/likers', checkAuth, async (req, res) => {
     }
 });
 
-// ROTA LISTAR LIKERS DE VÍDEO
-// (Sem alteração)
 router.get('/videos/:id/likers', checkAuth, async (req, res) => {
     const videoId = parseInt(req.params.id, 10);
     if (isNaN(videoId)) { return res.status(400).json({ error: 'ID do vídeo inválido.' }); }
@@ -256,14 +280,9 @@ router.get('/videos/:id/likers', checkAuth, async (req, res) => {
 
 
 // =================================================================
-// ★★★ ROTAS DE COMENTÁRIOS ★★★
-// (Sem alteração)
+// ★★★ ROTAS DE COMENTÁRIOS (COM NOTIFICAÇÕES) ★★★
 // =================================================================
 
-/**
- * GET /api/media/photos/:photoId/comments
- * Busca comentários de uma foto
- */
 router.get('/photos/:photoId/comments', checkAuth, async (req, res) => {
     const photoId = parseInt(req.params.photoId, 10);
     if (isNaN(photoId)) {
@@ -285,7 +304,6 @@ router.get('/photos/:photoId/comments', checkAuth, async (req, res) => {
             }
         });
 
-        // Formata para o frontend
         const formattedComments = comments.map(comment => ({
             id: comment.id,
             text: comment.text,
@@ -304,10 +322,6 @@ router.get('/photos/:photoId/comments', checkAuth, async (req, res) => {
     }
 });
 
-/**
- * POST /api/media/photos/:photoId/comments
- * Cria um novo comentário em uma foto
- */
 router.post('/photos/:photoId/comments', checkAuth, async (req, res) => {
     const photoId = parseInt(req.params.photoId, 10);
     const authorId = req.user.userId;
@@ -321,6 +335,9 @@ router.post('/photos/:photoId/comments', checkAuth, async (req, res) => {
     }
 
     try {
+        const photo = await prisma.photo.findUnique({ where: { id: photoId } });
+        if (!photo) return res.status(404).json({ message: 'Foto não encontrada.' });
+
         const newComment = await prisma.comment.create({
             data: {
                 text: text,
@@ -338,7 +355,18 @@ router.post('/photos/:photoId/comments', checkAuth, async (req, res) => {
             }
         });
 
-        // Formata para o frontend
+        // ★ CORREÇÃO DO LINK NO COMENTÁRIO ★
+        if (photo.authorId !== authorId) {
+            await prisma.notification.create({
+                data: {
+                    userId: photo.authorId,
+                    type: 'COMMENT',
+                    content: `${req.user.username || 'Alguém'} comentou na sua foto: "${text.substring(0, 20)}${text.length > 20 ? '...' : ''}"`,
+                    link: `/photo/${photoId}` // <-- LINK CORRIGIDO AQUI
+                }
+            });
+        }
+
         const formattedComment = {
             id: newComment.id,
             text: newComment.text,
@@ -357,6 +385,4 @@ router.post('/photos/:photoId/comments', checkAuth, async (req, res) => {
     }
 });
 
-
 module.exports = router;
-

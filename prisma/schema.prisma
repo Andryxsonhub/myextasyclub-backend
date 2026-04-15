@@ -1,5 +1,4 @@
 // myextasyclub-backend/prisma/schema.prisma
-// --- ★★★ ATUALIZADO (Adiciona 'destacadoAte' ao modelo 'User') ★★★ ---
 
 generator client {
   provider = "prisma-client-js"
@@ -11,45 +10,46 @@ datasource db {
 }
 
 model User {
-  id                   Int       @id @default(autoincrement())
-  email                String    @unique
-  username             String?   @unique
-  name                 String?
-  password             String
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  profile              Profile?
-  photos               Photo[]
-  videos               Video[] // Relação com Vídeo
-  posts                Post[]
-  streams              LiveStream[]    @relation("Host")
-  transactions         Transaction[]
-  subscription         Subscription?
-  viewedProfiles       ProfileView[]   @relation("Viewer")
-  likesGiven           Like[]          @relation("LikesGiven")
-  likesReceived        Like[]          @relation("LikesReceivedOnProfile")
-  following            Follow[]        @relation("Following")
-  followers            Follow[]        @relation("Followers")
-  interests            String?
-  desires              String?
-  fetishes             String?
-  lastSeenAt           DateTime?       @map("last_seen_at")
-  pimentaBalance       Int?            @default(0) @map("pimenta_balance")
-  tipo_plano           String?         @default("gratuito") @map("tipo_plano")
-  data_expiracao_plano DateTime?       @map("data_expiracao_plano")
-  status               String?         @default("ativo") @map("status")
+  id                    Int               @id @default(autoincrement())
+  email                 String            @unique
+  username              String?           @unique
+  name                  String?
+  password              String
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  profile               Profile?
+  photos                Photo[]
+  videos                Video[] 
+  posts                 Post[]
+  streams               LiveStream[]      @relation("Host")
+  transactions          Transaction[]
+  subscription          Subscription?
+  viewedProfiles        ProfileView[]     @relation("Viewer")
+  likesGiven            Like[]            @relation("LikesGiven")
+  likesReceived         Like[]            @relation("LikesReceivedOnProfile")
+  following             Follow[]          @relation("Following")
+  followers             Follow[]          @relation("Followers")
+  interests             String?
+  desires               String?
+  fetishes              String?
+  lastSeenAt            DateTime?         @map("last_seen_at")
+  pimentaBalance        Int?              @default(0) @map("pimenta_balance")
+  tipo_plano            String?           @default("gratuito") @map("tipo_plano")
+  data_expiracao_plano  DateTime?         @map("data_expiracao_plano")
+  status                String?           @default("ativo") @map("status")
+  destacadoAte          DateTime?         @map("destacado_ate")
 
-  // ★★★ ESTA É A LINHA QUE FALTAVA (CORREÇÃO DO ERRO 500) ★★★
-  destacadoAte         DateTime?       @map("destacado_ate") // <-- Adiciona a coluna para o Destaque
+  // RELAÇÃO DE NOTIFICAÇÕES
+  notifications         Notification[]
 
-  reportsReceived      Report[]        @relation("Reported")
-  reportsMade          Report[]        @relation("Reporter")
-  blockedBy            BlockedUser[]   @relation("Blocked")
-  blockedUsers         BlockedUser[]   @relation("Blocker")
-  sentMessages         Message[]       @relation("SentMessages")
-  receivedMessages     Message[]       @relation("ReceivedMessages")
-  extrato              ExtratoPimentas[]
-  comments             Comment[] // Relação com Comentários
+  reportsReceived       Report[]          @relation("Reported")
+  reportsMade           Report[]          @relation("Reporter")
+  blockedBy             BlockedUser[]     @relation("Blocked")
+  blockedUsers          BlockedUser[]     @relation("Blocker")
+  sentMessages          Message[]         @relation("SentMessages")
+  receivedMessages      Message[]         @relation("ReceivedMessages")
+  extrato               ExtratoPimentas[]
+  comments              Comment[] 
 
   @@map("users")
 }
@@ -79,7 +79,7 @@ model Photo {
   author      User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
   authorId    Int       @map("author_id")
   likes       Like[]    @relation("LikesOnPhoto")
-  comments    Comment[] // Relação com Comentários
+  comments    Comment[] 
 
   @@map("photos")
 }
@@ -93,7 +93,7 @@ model Video {
   author       User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
   authorId     Int       @map("author_id")
   likes        Like[]    @relation("LikesOnVideo")
-  comments     Comment[] // Relação com Comentários
+  comments     Comment[] 
   thumbnailUrl String?   @map("thumbnail_url")
 
   @@map("videos")
@@ -212,13 +212,13 @@ model Subscription {
 }
 
 model Report {
-  id             Int      @id @default(autoincrement())
-  reason         String   @db.Text
-  createdAt      DateTime @default(now())
-  reportedUser   User     @relation("Reported", fields: [reportedUserId], references: [id], onDelete: Cascade)
-  reportedUserId Int
-  reporterUser   User     @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
-  reporterId     Int
+  id              Int      @id @default(autoincrement())
+  reason          String   @db.Text
+  createdAt       DateTime @default(now())
+  reportedUser    User     @relation("Reported", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reportedUserId  Int
+  reporterUser    User     @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reporterId      Int
 
   @@map("reports")
 }
@@ -235,7 +235,6 @@ model BlockedUser {
   @@map("blocked_users")
 }
 
-// Model de Chat (Fase 4)
 model Message {
   id         Int      @id @default(autoincrement())
   content    String   @db.Text
@@ -249,36 +248,42 @@ model Message {
   @@map("messages")
 }
 
-// --- NOVO MODELO PARA COMENTÁRIOS ---
 model Comment {
   id        Int      @id @default(autoincrement())
   text      String   @db.Text
   createdAt DateTime @default(now())
-
-  // Relação com o Autor (Usuário)
   author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
   authorId  Int
-
-  // Relação com a Foto
   photo     Photo?   @relation(fields: [photoId], references: [id], onDelete: Cascade)
   photoId   Int?
-
-  // Relação com o Vídeo (opcional)
   video     Video?   @relation(fields: [videoId], references: [id], onDelete: Cascade)
   videoId   Int?
 
   @@map("comments")
 }
 
-// Model de Extrato de Pimentas (Fase 5)
 model ExtratoPimentas {
   id             Int      @id @default(autoincrement())
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId         Int
-  valor          Int // +100 se ganhou, -50 se gastou
-  contexto       String // 'compra_pacote', 'presente_recebido', 'gasto_mensagem', etc.
-  userAlvoId     Int? // O ID do outro usuário envolvido (se for um presente)
+  valor          Int 
+  contexto       String 
+  userAlvoId     Int? 
   data_transacao DateTime @default(now())
 
   @@map("extrato_pimentas")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  content   String   @db.Text
+  type      String   
+  link      String?  
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+
+  @@map("notifications")
 }
